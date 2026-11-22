@@ -1,0 +1,86 @@
+---
+title: Docker
+description: Build the screen-relay image, run it, and open the desktop in a browser.
+---
+
+Run screen-relay in a container instead of installing it on the host, and open the desktop in your browser. The image includes screen-relay, its dependencies, and a desktop, and starts `screen-relay up --bind 0.0.0.0` on port 8080.
+
+## Run the container
+
+1. From a clone of the screen-relay repository, which holds the Dockerfile, build the image:
+
+   ```sh
+   docker build -t screen-relay .
+   ```
+
+2. Start the container, publishing the port on host loopback only:
+
+   ```sh
+   docker run -d --name desk -p 127.0.0.1:8080:8080 screen-relay
+   ```
+
+3. Get the viewer link, which includes the session token:
+
+   ```sh
+   docker logs desk
+   ```
+
+   Open the link. If you published a different port, change the port in the link. Keep the link and any token output private. To print the token again, run `docker exec desk screen-relay status --show-token`.
+
+Stop the session and remove the container:
+
+```sh
+docker stop desk
+docker rm desk
+```
+
+`docker stop` ends the session cleanly.
+
+## What changes in a container
+
+- Publish to host loopback only. Publishing the port on another interface does not make the desktop usable from there, because screen-relay accepts loopback requests only. For remote use, pass `--public` behind a TLS proxy. See [Remote access](/docs/remote-access).
+- You do not need `--init`. The image runs an init process.
+- Arguments after the image name go to `screen-relay up`, such as `--public`.
+- To run as root, add `--user root`. Session state then lives in `/root/.local/state/screen-relay/`.
+- To change resolution, frame rate, or another setting, mount `config.yaml` at `/home/relay/.config/screen-relay/config.yaml`. See [Configuration](/docs/configuration) for the keys.
+
+## Control the desktop from the host
+
+Client commands inside the container find the session on their own:
+
+```sh
+docker exec desk screen-relay screenshot - > screen.png
+docker exec desk screen-relay click 0.5 0.5
+```
+
+To run client commands from the host, you need the URL and the token, because the container's `0.0.0.0` bind creates one.
+
+1. Install the host CLI, which needs Node 22 or newer:
+
+   ```sh
+   npm install -g screen-relay
+   ```
+
+2. Copy the token into a new private directory, and set the target only if the copy succeeds:
+
+   ```sh
+   if relay_token_dir=$(mktemp -d "$HOME/.screen-relay-token.XXXXXX"); then
+     if (umask 077; docker exec desk sh -c 'cat ~/.local/state/screen-relay/default/token' > "$relay_token_dir/token") &&
+        [ -s "$relay_token_dir/token" ]; then
+       export SCREEN_RELAY_URL=http://127.0.0.1:8080
+       export SCREEN_RELAY_TOKEN_FILE="$relay_token_dir/token"
+     else
+       rm -f "$relay_token_dir/token"
+       rmdir "$relay_token_dir"
+       printf '%s\n' 'Could not copy the session token.' >&2
+     fi
+   fi
+   ```
+
+3. Check the connection:
+
+   ```sh
+   screen-relay status
+   ```
+
+Setting only `SCREEN_RELAY_URL` fails with `unauthorized`. Delete the local token file and its directory when you no longer need them. After restarting the session, copy its new token into a fresh private directory.

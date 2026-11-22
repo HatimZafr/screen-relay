@@ -1,0 +1,476 @@
+---
+title: CLI reference
+description: Commands and options for starting and controlling a screen-relay session.
+---
+
+Use `screen-relay` to start a desktop and control it:
+
+```sh
+screen-relay up -d
+screen-relay screenshot screen.png
+```
+
+VM commands run on the Linux VM, Mac, or Windows PC that hosts the desktop, including a container or sandbox. Client commands also run remotely with a URL and token. [Global options](#global-options) include `--json`.
+
+## VM commands
+
+### up
+
+Starts a desktop session and waits for it to be ready. A machine that is not set up is set up first. See [Getting started](/docs/getting-started#install-screen-relay).
+
+```sh
+screen-relay up -d --name demo --port 8084
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-d`, `--detach` | Run in the background. Otherwise, Ctrl+C stops the session. |
+| `--config FILE` | YAML config. Default: `SCREEN_RELAY_CONFIG`, then `${XDG_CONFIG_HOME:-~/.config}/screen-relay/config.yaml` if present. |
+| `--port N` | Listen port, 1 to 65535. Default `8080`. |
+| `--desktop CMD` | `xfce`, `none`, or a command. Default: `xfce` on X11, `foot` on Wayland, or `none` when attaching. Always `none` on macOS and Windows. |
+| `--display DISPLAY` | Attach to an existing display at its size: `:0` (X display) or `wayland-1` (Wayland socket) on Linux. Not supported on macOS or Windows. |
+| `--backend x11\|wayland\|macos\|windows` | On Linux, default `x11` when available, else `wayland`. Without a configured backend, a display without a colon selects Wayland. On macOS, `macos`. On Windows, `windows`. |
+| `--output NAME` | Wayland output name, macOS display ID, Windows display name, or Android device serial. On Android, defaults to the sole device listed as ready by `adb devices`. |
+| `--public URL` | HTTPS origin. Does not change the listen address. Generates a token. Requires a TLS proxy unless direct TLS is configured. |
+| `--allow-origin ORIGINS` | Comma-separated exact origins for browser WebSocket connections, in addition to the `--public` origin or loopback. This does not enable cross-origin browser HTTP access. Use lowercase `https://HOST[:PORT]` for any host, or `http://localhost[:PORT]` and `http://127.0.0.1[:PORT]` for a page served on the machine itself. No wildcards. Generates a token. Env: `SCREEN_RELAY_ALLOW_ORIGIN`. See [Browser origins](/docs/remote-access#browser-origins). |
+| `--tls-cert FILE`, `--tls-key FILE` | Serve TLS directly. Both are required. |
+| `--bind ADDR` | Listen address. Defaults to `127.0.0.1`, including with `--public`. Any other address generates a token. |
+| `--timeout S` | Engine and desktop readiness timeout in seconds. Default `30`; must be positive. |
+| `--yes`, `-y` | Install missing packages without asking. Required when there is no terminal. |
+
+- Default display: 1280x720 at 60 fps.
+- On macOS, screen-relay attaches to the existing display and ignores `display.resolution`. It does not stop an attached display.
+- On Windows, screen-relay attaches to the signed-in user's desktop and ignores `display.resolution` with a warning. Run `up` in a terminal on that desktop. Over SSH or from a service session, `up` fails. The viewer link always carries a token.
+- To become ready, a desktop command must open a window on X11 or a new Wayland display. Startup failures include the component's log.
+- If the display, desktop, or engine exits later, the session stops. Check `screen-relay status` and `screen-relay logs`.
+- Foreground `up --json` prints after supervision ends. An interrupt prints no success document.
+- Treat viewer URLs containing `#token=` and JSON tokens as secrets.
+- See [Configuration](/docs/configuration) and [Remote access](/docs/remote-access).
+
+For backend-specific usage, see [X11](/docs/linux), [Wayland](/docs/linux), and [macOS](/docs/macos).
+
+### down
+
+Stops the session and its apps. On Windows, apps started with `run` keep running. Safe to repeat.
+
+```sh
+screen-relay down --name demo
+```
+
+The JSON `outcome` is `stopped` or `unchanged`.
+
+### logs
+
+Prints the last 200 lines of each log, or of one component.
+
+```sh
+screen-relay logs engine --follow
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `component` | `display`, `dbus`, `desktop`, `engine`, or `apps`. Omit to show all. |
+| `-f`, `--follow` | Follow new lines. Incompatible with `--json`. |
+
+- Detached sessions write `supervisor.log` in the [state directory](#state-directory).
+
+### run
+
+Starts an app on the session desktop and returns its process ID.
+
+```sh
+screen-relay run --name demo --restart -- mousepad notes.txt
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--restart` | Restart the app whenever it exits, until the session stops. Not supported on Windows. |
+
+- Put screen-relay options before `--`. Everything after it goes to the app.
+- Read app output with `screen-relay logs apps`.
+- Without `--restart`, a nonzero exit within one second reports `component_failed`.
+- Restarts get new process IDs. Retry delays start at one second, double to 30 seconds, and reset after 60 seconds of uptime.
+- Apps share the display and D-Bus session when available. Attached displays use the caller's environment.
+- On Linux, apps run without ambient capabilities.
+- On macOS, apps start in your user session without `DISPLAY`, `WAYLAND_DISPLAY`, or `XAUTHORITY`.
+
+### doctor
+
+Checks the VM, Mac, or Windows PC and prints fixes for failed checks.
+
+```sh
+SCREEN_RELAY_BACKEND=wayland screen-relay doctor
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--config FILE` | Load a YAML config, using the same default as `up`. |
+
+- On Linux, doctor checks the `x11` backend unless `SCREEN_RELAY_BACKEND` or the config `backend` key says otherwise.
+- On macOS, doctor checks the macOS version, the engine, and the Screen Recording and Accessibility permissions.
+- On Windows, doctor checks the Windows version, MSYS2, the engine, and whether it runs in a desktop session. The MSYS2 check fails when another account owns the installation or can write to it.
+- Failures exit 1. Warnings do not.
+- JSON checks include `name`, `status`, `detail`, and `fix`.
+
+### install
+
+Sets up the machine without starting a session. Safe to repeat.
+
+```sh
+screen-relay install --backend wayland --yes
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--backend BACKEND` | Backend to set up: `x11`, `wayland`, or `all` on Linux; `macos` on macOS; `windows` on Windows, the only value there. Default: `x11` on Linux, `macos` on macOS. Also read from `SCREEN_RELAY_BACKEND` and the config file's `backend` key. |
+| `--desktop COMMAND` | Same values as `up --desktop`. With the default `xfce` on x11, the XFCE packages are installed. With `none` or another command, they are skipped. |
+| `--config FILE` | Read `backend` and `desktop` from this config file. |
+| `--yes`, `-y` | Install packages without asking. Required when there is no terminal. |
+
+- Installs packages with the system package manager, using `sudo` unless you are root.
+- On Windows, installs MSYS2 at `C:\msys64` with winget if it is missing, then installs its packages with pacman. Without winget, it stops and asks you to install MSYS2 from https://www.msys2.org. It runs MSYS2 only when your account or an administrator owns the installation and no other account can write to it. After it installs MSYS2, it removes the rules that the folder inherits from `C:\`, which let every user add files.
+- Builds the engine into `~/.local/share/screen-relay/engine/<version>/`. Builds for earlier versions stay there until deleted.
+- At a terminal, it asks before installing packages. Anywhere else, it needs `--yes`.
+- The outcome is `installed` after it sets something up, or `unchanged` when nothing was missing. Adding a backend keeps the ones the engine already has.
+- See [Getting started](/docs/getting-started) for supported distributions.
+
+## Client commands
+
+Client commands share these options and follow the [client target](#client-target) rules.
+
+| Option | Meaning |
+| --- | --- |
+| `--url URL` | Engine origin. Default: the local session. Env: `SCREEN_RELAY_URL`. |
+| `--token-file FILE` | Read a token from a file. Env: `SCREEN_RELAY_TOKEN_FILE`. |
+| `--timeout S` | Reply timeout in seconds. Default `10`; `0.001` to `2147483.647` in whole milliseconds. |
+
+### status
+
+Shows a local session or, with `--url`, a remote engine.
+
+```sh
+screen-relay status --name demo
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--show-token` | Include the running local session's token. Hidden by default. |
+
+- Local states are `starting`, `ready`, `stopped`, and `failed`.
+- Existing sessions exit 0 even when stopped or failed. A missing session returns `not_running`.
+- JSON includes `session.running`, `url`, `localUrl`, `display`, `resolution`, `logs`, and, when running, `capabilities` or a `health` error.
+- Other fields can include `backend`, `fps`, `desktop`, `tokenFile`, `tlsCert`, `ready`, `stopped`, `supervisor`, `ownsDisplay`, `runtimeDir`, and `waylandDisplay`.
+- Failed sessions include `error`. Remote status includes `url`, `capabilities`, and `metrics`.
+
+### screenshot
+
+Saves a PNG, including while a viewer is connected.
+
+```sh
+screen-relay screenshot /tmp/relay.png
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | Destination, default `screen.png`. `-` writes PNG bytes to stdout; incompatible with `--json`. |
+
+### click
+
+Clicks at the given [screen coordinates](#input-rules).
+
+```sh
+screen-relay click 0.5 0.5 --button right
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--button` | `left`, `middle`, or `right`. Default `left`. |
+
+### move
+
+Moves the pointer to the given [screen coordinates](#input-rules).
+
+```sh
+screen-relay move 0.5 0.5
+```
+
+### scroll
+
+Moves to a [screen coordinate](#input-rules) and scrolls by whole wheel notches.
+
+```sh
+screen-relay scroll 0.5 0.5 --dy 3
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--dx N` | Horizontal notches; positive is right. Default `0`. |
+| `--dy N` | Vertical notches; positive is down. Default `0`. |
+
+- At least one value must be nonzero.
+
+### key
+
+Presses physical key combinations in order.
+
+```sh
+screen-relay key ctrl+l Enter
+```
+
+- Join keys with `+`, for example `alt+Tab` or `ctrl++`.
+- Modifiers are `ctrl`, `shift`, `alt`, and `super`.
+- Aliases: `control` for `ctrl`; `meta`, `cmd`, and `win` for `super`.
+- Keys include US-layout characters, navigation keys, and `F1` to `F24`.
+
+### type
+
+Types text on the desktop. It uses the desktop's keyboard layout and also types characters that the layout lacks.
+
+```sh
+screen-relay type "Hello, 世界"
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--stdin` | Read text from stdin instead of an argument. |
+
+- A character the desktop cannot produce returns `unsupported_input`.
+
+### input
+
+Sends 1 to 256 raw [input events](/docs/sdk#input-events) as a JSON array.
+
+```sh
+screen-relay input '[{"type":"keyDown","key":4},{"type":"keyUp","key":4}]'
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--stdin` | Read the JSON array from stdin instead of an argument. |
+
+### clipboard
+
+Reads or replaces the desktop's clipboard text.
+
+```sh
+screen-relay clipboard get
+screen-relay clipboard set "https://example.com"
+```
+
+| Command | Meaning |
+| --- | --- |
+| `get` | Print the clipboard text exactly, with no newline added. With `--json`, print `clipboard.text` and `clipboard.bytes`. |
+| `set TEXT` | Replace the clipboard text. `set ""` clears it. |
+
+| Option | Meaning |
+| --- | --- |
+| `--stdin` | With `set`, read the text from stdin instead of an argument. |
+
+- Text is UTF-8, up to 256 KiB, without NUL characters.
+- The clipboard works while another client owns input.
+- `set` does not paste. Press the paste keys afterward, such as `screen-relay key ctrl+v`, or `screen-relay key super+v` on macOS.
+- Setting a long text and pasting it is faster than typing it, and it does not depend on the keyboard layout.
+- On Linux, text that screen-relay set leaves the clipboard when the session stops, unless the desktop runs a clipboard manager.
+
+### Input rules
+
+Coordinates are fractions from `0` to `1`, measured from the top-left.
+
+- Success means the engine applied the events, not that the app reacted. Take a screenshot to check.
+- Only one input owner can send input: a viewer that took control, an SDK control session, or the CLI.
+- A viewer opens with control when input is idle. If another viewer or an SDK control session owns input, the new viewer opens view-only. Choose **Release control** before sending input from the CLI.
+- Choose **Take control** to take input from another viewer or end an SDK control session. The previous viewer reconnects view-only. An automatic reconnect never takes input from another owner.
+- Up to four viewers can watch the desktop at the same time. Opening another viewer does not disconnect the current one.
+- Batches hold up to 256 events. A key combination is never split across batches.
+- Keys and buttons are released after each batch.
+- `busy` means another owner holds input, a batch exceeds the 1024-event queue, or the session ends during input.
+- No retries. Partial failures report `data.applied`.
+
+## Other commands
+
+### skills
+
+Reads the agent skills bundled with the CLI offline.
+
+```sh
+screen-relay skills list
+screen-relay skills get core --full
+screen-relay skills path core
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--full` | Append references and templates to `skills get`. |
+
+- `list` is the default action. `path` takes an optional skill name.
+- Skills ship with the CLI, so their instructions match the installed version.
+- See [Agent skills](/docs/agent-skills).
+
+### help
+
+Shows help without starting a session.
+
+```sh
+screen-relay help click
+screen-relay help --all --json
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--all` | With `--json`, describe every command. |
+
+## Global options
+
+These options work before or after a command, but not after `--`.
+
+| Option | Meaning |
+| --- | --- |
+| `-h`, `--help` | Show help. |
+| `-v`, `--version` | Print the version. |
+| `--json` | Print machine-readable output. |
+| `--no-color` | Disable color. |
+| `--name NAME` | Select a session; default `default`. Up to 64 characters, starting with a letter, digit, `_`, or `-`; later characters can also include `.`. |
+
+- Options accept `--name VALUE` or `--name=VALUE`.
+- Boolean options accept `--no-OPTION`. `--` ends option parsing.
+
+### Help layouts
+
+Set `SCREEN_RELAY_AGENT=1` for the agent layout or `SCREEN_RELAY_AGENT=0` for the human layout. See [Agent-aware help](/docs/agent-skills#agent-aware-help).
+
+## Client target
+
+The target is:
+
+1. `--url`
+2. `SCREEN_RELAY_URL`
+3. The ready local session.
+
+- If the default session is missing and no name was selected, clients try `http://127.0.0.1:8080`.
+- Without a URL, other client commands return `not_running` for an explicitly selected missing session or a stopped session. Local `status` never falls back.
+
+The token comes from:
+
+1. `--token-file`
+2. `SCREEN_RELAY_TOKEN_FILE`
+3. The local session, only when no URL is set.
+
+Local `status` uses its stored token for health checks.
+
+URL rules:
+
+- Remote origins require HTTPS and a 64-character lowercase hexadecimal token.
+- HTTP works only for `localhost` and `127.0.0.1`.
+- URLs cannot contain a path, query, fragment, or credentials.
+- Redirects are refused.
+- Local sessions accept their own TLS certificate even when its host name does not match, so a self-signed certificate works.
+
+See [Remote access](/docs/remote-access).
+
+```sh
+screen-relay screenshot desk.png --url https://desk.example.com --token-file ./token
+```
+
+## Output
+
+- Queries write to stdout. Receipts and recovery steps go to stderr.
+- When piped, `up` writes the viewer URL, `screenshot` writes the saved path, `run` writes the process ID, and input commands write nothing.
+
+Color follows, in order:
+
+1. `--no-color`
+2. `NO_COLOR`
+3. `FORCE_COLOR`
+4. Terminal detection
+
+`TERM=dumb` disables color.
+
+## JSON output
+
+- `--json` writes a success document to stdout and structured errors to stderr.
+- Success can include `warnings` and `next`.
+- `doctor --json` writes checks to stdout even when a check fails.
+- An interrupted command can exit without a document.
+
+| Command | Success fields |
+| --- | --- |
+| `up` | `session` (`ready`, `name`, `url`, `viewer`, `token`, `display`, `waylandDisplay`, `xauthority`, `logs`, `pid`, `enginePid`, `bind`, `port`, `public`, `resolution`, `fps`), `outcome` |
+| `down` | `session`, `outcome` |
+| `status` | `session` |
+| `screenshot` | `screenshot` (`path`, `width`, `height`, `bytes`), `outcome` |
+| Input commands | `input.events`, `outcome` |
+| `clipboard get` | `clipboard` (`text`, `bytes`) |
+| `clipboard set` | `clipboard` (`bytes`), `outcome` |
+| `logs` | `logs`, keyed by component |
+| `run` | `app.pid`, `app.command`, `outcome` |
+| `doctor` | `checks`, `summary` |
+| `install` | `install` (`backends`, `engine`), `outcome` |
+| `skills` | `skills`, `skill`, or `path` |
+
+### Error document
+
+Errors contain:
+
+- `status`: `error` or `action_required`.
+- `reason`: match this field, not `message`.
+- `message`.
+- Optional `next` commands and `data`.
+
+Each `next` entry has `command` and `argv`. `data` can contain `component`, `log`, `logs`, `applied`, or `httpStatus`.
+
+### Error reasons
+
+| Reason | Meaning and action |
+| --- | --- |
+| `invalid_input` | Invalid value, URL, token, or event. Correct the input. |
+| `invalid_option`, `unknown_command`, `missing_input` | Unknown option, command, or missing input. Check help. When `up` needs setup and there is no terminal, run `screen-relay install --yes` or pass `--yes` to `up`. |
+| `missing_command` | `run` needs an app; place it after `--`. |
+| `unauthorized` | Token missing or wrong. Check `--token-file`. |
+| `forbidden` | Host or Origin rejected. Use the `--public` origin or a loopback page whose origin matches the address it connects to, or list a browser page's origin in `--allow-origin`. |
+| `unsupported_input` | Backend cannot produce the input. Change input or keyboard layout. |
+| `clipboard_unavailable` | The desktop has no clipboard the engine can use, or the app that owns it did not answer. Check `capabilities.clipboard` in `screen-relay status --json`. |
+| `busy` | Input is owned, the queue is full, or a screenshot is in progress. Release control or retry. |
+| `control_taken` | A viewer took control and ended the SDK control session. Connect again after the viewer releases control. |
+| `unreachable` | Connection, DNS, or TLS failed. Check URL and certificate. |
+| `timeout` | Startup or request timed out. Check logs or raise `--timeout`. |
+| `not_running` | Missing session or logs, or stopped session. Start it or select another. |
+| `not_found` | No running session for `run`, unknown skill or endpoint. Start the session or check the name. |
+| `already_running` | Session name in use. Stop it or choose another. |
+| `port_in_use` | Port occupied. Stop the process or choose another. |
+| `component_failed` | Component or app failed. Read its logs. |
+| `spawn_failed` | App could not start. Check its name and installation. |
+| `missing_dependency` | A required program is missing. Run `screen-relay install`. |
+| `unsupported_platform` | `up`, `down`, or `run` needs Linux, macOS, or Windows. Run on the VM, Mac, or Windows PC. |
+| `invalid_config` | Invalid configuration. Correct the file and key named in the error. |
+| `disconnected`, `io_error`, `protocol_error` | Connection lost, local I/O failed, or engine response invalid. Check the connection or reported file. |
+| `canceled` | Interrupted. Retry if needed. |
+| `internal` | Unexpected response or CLI error. Check logs and run `screen-relay doctor`. |
+
+See [Troubleshooting](/docs/troubleshooting) for more fixes.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success. |
+| `1` | Runtime, network, permission, configuration, or missing-session failure. |
+| `2` | Usage error, invalid value, or missing input. |
+| `130` | Interrupted with Ctrl+C. A second interrupt exits immediately. |
+| `128+n` | Terminated by signal `n`. |
+
+## Environment variables
+
+Options override environment variables, then config values, then defaults. Invalid values fail. See [Configuration](/docs/configuration) for keys and limits.
+
+| Variable | Applies to |
+| --- | --- |
+| `SCREEN_RELAY_CONFIG` | Config file for `up`, `install`, and `doctor`. |
+| `SCREEN_RELAY_PORT`, `SCREEN_RELAY_BIND`, `SCREEN_RELAY_PUBLIC`, `SCREEN_RELAY_TLS_CERT`, `SCREEN_RELAY_TLS_KEY`, `SCREEN_RELAY_DESKTOP`, `SCREEN_RELAY_BACKEND` | Matching `up` options; `SCREEN_RELAY_BACKEND` also selects the backend for `doctor` and `install`. |
+| `SCREEN_RELAY_RESOLUTION`, `SCREEN_RELAY_COMPOSITOR`, `SCREEN_RELAY_FPS`, `SCREEN_RELAY_BITRATE_MIN`, `SCREEN_RELAY_BITRATE_START`, `SCREEN_RELAY_BITRATE_MAX`, `SCREEN_RELAY_KEYBOARD_LAYOUT` | Display, stream, and keyboard settings. |
+| `SCREEN_RELAY_URL`, `SCREEN_RELAY_TOKEN_FILE` | Client URL and token file. |
+| `SCREEN_RELAY_AGENT` | Help layout: `1` for agent, `0` for human. |
+| `NO_COLOR`, `FORCE_COLOR` | Output color. |
+
+### State directory
+
+Session files and logs are in `${XDG_STATE_HOME:-~/.local/state}/screen-relay/<name>/`. The directory has mode `0700`. Its token file has mode `0600`.

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inside the engine: flow control</title>
+<script>
+  var t = new URLSearchParams(location.search).get("theme");
+  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  if (window.self === window.top) document.documentElement.setAttribute("data-top", "");
+</script>
+<style>
+  :root {
+    color-scheme: dark;
+    --ds-background-100: oklch(0 0 0);
+    --ds-background-200: oklch(0.027 0 0);
+    --ds-gray-100: oklch(0.218 0 0);
+    --ds-gray-400: oklch(0.301 0 0);
+    --ds-gray-600: oklch(0.623 0 0);
+    --ds-gray-900: oklch(0.706 0 0);
+    --ds-gray-1000: oklch(0.946 0 0);
+    --ds-blue-700: oklch(57.61% 0.2321 258.23);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+      color-scheme: light;
+      --ds-background-100: oklch(1 0 0);
+      --ds-background-200: oklch(0.984 0 0);
+      --ds-gray-100: oklch(0.961 0 0);
+      --ds-gray-400: oklch(0.937 0 0);
+      --ds-gray-600: oklch(0.732 0 0);
+      --ds-gray-900: oklch(0.42 0 0);
+      --ds-gray-1000: oklch(0.205 0 0);
+      --ds-blue-700: oklch(57.61% 0.2508 258.23);
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --ds-background-100: oklch(1 0 0);
+    --ds-background-200: oklch(0.984 0 0);
+    --ds-gray-100: oklch(0.961 0 0);
+    --ds-gray-400: oklch(0.937 0 0);
+    --ds-gray-600: oklch(0.732 0 0);
+    --ds-gray-900: oklch(0.42 0 0);
+    --ds-gray-1000: oklch(0.205 0 0);
+    --ds-blue-700: oklch(57.61% 0.2508 258.23);
+  }
+  html, body { margin: 0; background: transparent; }
+  :root[data-top], :root[data-top] body { background: var(--ds-background-100); }
+  svg { display: block; width: 100%; height: auto; font-family: Geist, "Geist Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .box { fill: var(--ds-background-200); stroke: var(--ds-gray-400); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .node { fill: var(--ds-gray-100); }
+  .engine { stroke: var(--ds-blue-700); }
+  .label { fill: var(--ds-gray-1000); font-size: 14px; font-weight: 500; }
+  .sub { fill: var(--ds-gray-900); font-size: 13px; }
+  .head { fill: var(--ds-gray-900); font-size: 13px; font-weight: 500; }
+  .tag { fill: var(--ds-gray-900); font-size: 12px; }
+  .wire { fill: none; stroke: var(--ds-gray-600); stroke-width: 1; vector-effect: non-scaling-stroke; marker-end: url(#arrow); }
+  .both { marker-start: url(#arrow); }
+  .icon { fill: none; stroke: var(--ds-gray-900); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  #arrow path { fill: none; stroke: var(--ds-gray-600); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 720 560" role="img" aria-labelledby="t d">
+  <title id="t">Inside the engine: flow control</title>
+  <desc id="d">Inside the screen-relay engine, each acknowledgement gives the frame's total time since capture and its wait in the viewer. Recent delays over 10 seconds give the link's normal delay and the longest delay. The standing queue is the smallest delay above the base over one round trip. The longest delay sizes the frame window. The whole standing queue decides when to pause capture. The network part of it decides when to cut the bitrate. Safety limits cap frames and bytes on the way and close the stream after 3 seconds without progress.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M2 1.5 L6 4 L2 6.5"/>
+    </marker>
+  </defs>
+
+  <rect class="box" x="16" y="16" width="688" height="528" rx="12"/>
+  <text class="head" x="40" y="40">screen-relay engine, from acknowledgements to decisions</text>
+  <rect class="box node" x="272" y="56" width="176" height="128" rx="6"/>
+  <g class="icon" transform="translate(288 71)" aria-hidden="true"><circle cx="8" cy="8" r="7"/><path d="M8 4v4l2.5 1.5"/></g>
+  <text class="label" x="312" y="85">Recent delays</text>
+  <text class="sub" x="288" y="111">over 10 s, the shortest</text>
+  <text class="sub" x="288" y="129">is the link's normal</text>
+  <text class="sub" x="288" y="147">delay; the longest</text>
+  <text class="sub" x="288" y="165">sizes the window</text>
+  <rect class="box node" x="504" y="56" width="176" height="128" rx="6"/>
+  <g class="icon" transform="translate(520 80)" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M1.5 6h13M6 6v7.5"/></g>
+  <text class="label" x="544" y="94">Frame window</text>
+  <text class="sub" x="520" y="120">frames allowed on the</text>
+  <text class="sub" x="520" y="138">way: the longest delay</text>
+  <text class="sub" x="520" y="156">in frames, plus two</text>
+  <rect class="box node" x="40" y="224" width="184" height="128" rx="6"/>
+  <g class="icon" transform="translate(56 248)" aria-hidden="true"><circle cx="8" cy="8" r="7"/><path d="M4.5 8.5l2.5 2.5 4.5-5"/></g>
+  <text class="label" x="80" y="262">Acknowledgement</text>
+  <text class="sub" x="56" y="288">gives the frame's total</text>
+  <text class="sub" x="56" y="306">time since capture and</text>
+  <text class="sub" x="56" y="324">its wait in the viewer</text>
+  <rect class="box node" x="272" y="224" width="176" height="128" rx="6"/>
+  <g class="icon" transform="translate(288 239)" aria-hidden="true"><rect x="1.5" y="3" width="3" height="10" rx="1"/><rect x="6.5" y="3" width="3" height="10" rx="1"/><rect x="11.5" y="3" width="3" height="10" rx="1"/></g>
+  <text class="label" x="312" y="253">Standing queue</text>
+  <text class="sub" x="288" y="279">smallest delay above</text>
+  <text class="sub" x="288" y="297">the base over one</text>
+  <text class="sub" x="288" y="315">round trip. One late</text>
+  <text class="sub" x="288" y="333">burst leaves it at zero</text>
+  <rect class="box node" x="504" y="224" width="176" height="128" rx="6"/>
+  <g class="icon" transform="translate(520 239)" aria-hidden="true"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></g>
+  <text class="label" x="544" y="253">Pause</text>
+  <text class="sub" x="520" y="279">pauses capture when</text>
+  <text class="sub" x="520" y="297">the standing queue</text>
+  <text class="sub" x="520" y="315">reaches the base delay</text>
+  <text class="sub" x="520" y="333">plus two frames</text>
+  <rect class="box node" x="40" y="392" width="184" height="128" rx="6"/>
+  <g class="icon" transform="translate(56 416)" aria-hidden="true"><path d="M8 1.5l5.5 2v4.5c0 3-2.5 5.5-5.5 6.5-3-1-5.5-3.5-5.5-6.5V3.5z"/></g>
+  <text class="label" x="80" y="430">Safety limits</text>
+  <text class="sub" x="56" y="456">at most 3 s of frames</text>
+  <text class="sub" x="56" y="474">and 8 MiB on the way;</text>
+  <text class="sub" x="56" y="492">closes after 3 s idle</text>
+  <rect class="box node" x="504" y="392" width="176" height="128" rx="6"/>
+  <g class="icon" transform="translate(520 407)" aria-hidden="true"><path d="M2 12a6 6 0 0 1 12 0M2 12h12M8 12l3-4"/></g>
+  <text class="label" x="544" y="421">Bitrate</text>
+  <text class="sub" x="520" y="447">cut a quarter when the</text>
+  <text class="sub" x="520" y="465">network queue is high;</text>
+  <text class="sub" x="520" y="483">up 10% a second while</text>
+  <text class="sub" x="520" y="501">clear, within the range</text>
+  <path class="wire" d="M128 220V120H268"/>
+  <path class="wire" d="M228 288H268"/>
+  <path class="wire" d="M360 188V220"/>
+  <path class="wire" d="M452 120H500"/>
+  <path class="wire" d="M452 288H500"/>
+  <path class="wire" d="M360 356V456H500"/>
+  <text class="tag" x="198" y="108" text-anchor="middle">delays</text>
+  <text class="tag" x="248" y="277" text-anchor="middle">delays</text>
+  <text class="tag" x="368" y="208">its base</text>
+  <text class="tag" x="476" y="108" text-anchor="middle">largest</text>
+  <text class="tag" x="476" y="277" text-anchor="middle">all of it</text>
+  <text class="tag" x="430" y="444" text-anchor="middle">network part</text>
+</svg>
+</body>
+</html>

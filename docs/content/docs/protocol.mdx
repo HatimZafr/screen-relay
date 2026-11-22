@@ -1,0 +1,105 @@
+---
+title: HTTP API
+description: Control a screen-relay session over HTTP.
+---
+
+Call screen-relay over HTTP from any language. For most tasks, use the [CLI](/docs/cli) or [Node SDK](/docs/sdk).
+
+## Read the screen
+
+Start a session, then run these commands on the VM or through an [SSH tunnel](/docs/remote-access#ssh-tunnel):
+
+```sh
+curl -fsS http://127.0.0.1:8080/capabilities
+curl -fsS http://127.0.0.1:8080/screenshot.png -o screen.png
+```
+
+These commands assume the default address and a session bound to `127.0.0.1` without `--public`. That session has no token.
+
+For a session with a token:
+
+1. Run `screen-relay status --json` on the VM to find its `tokenFile` path. Add `--name NAME` for a named session.
+2. Replace `/path/to/token` with that path, and add `-H "Authorization: Bearer $(cat /path/to/token)"` to each request.
+3. Use the HTTPS origin if the session uses TLS.
+
+## Send input
+
+<span id="text-events" />
+<span id="input-events" />
+<span id="input-records" />
+
+Close a control session, or a viewer that owns input, before sending HTTP input. A view-only viewer does not block input. Then send input from any machine with the [CLI](/docs/cli), passing `--url` and `--token-file`, or with the [Node SDK](/docs/sdk).
+
+```sh
+screen-relay click 0.5 0.5 --url https://desktop.example.com --token-file ./token
+```
+
+Replace the URL and [save the session token in a private file](/docs/remote-access#control-a-session-from-your-laptop), and pass that file in place of `./token`. For a local session, omit `--url` and `--token-file`. Text input uses the desktop's keyboard layout and can type characters absent from it.
+
+`POST /input` takes binary records. To write your own client, see the [wire protocol](https://github.com/vercel-labs/screen-relay/blob/main/PROTOCOL.md).
+
+## Read and set the clipboard
+
+`GET /clipboard` returns the desktop's clipboard text as `{"text":"…"}`, and an empty string when the clipboard holds no text. `POST /clipboard` replaces it with the request body, read as UTF-8 text:
+
+```sh
+curl -fsS http://127.0.0.1:8080/clipboard
+curl -fsS --data-binary 'Hello from the API' http://127.0.0.1:8080/clipboard
+```
+
+A write returns `{"length":N}`, the number of bytes set, and an empty body clears the clipboard. The clipboard works while another client owns input, like a screenshot. Text is limited to 256 KiB and cannot contain NUL characters. To paste the text into an app, send the paste keys afterward, such as `screen-relay key ctrl+v`.
+
+`capabilities.clipboard` is `true` when the desktop has a clipboard the engine can use. On Wayland, the compositor must support the wlr-data-control protocol, which sway and labwc do.
+
+## Endpoints
+
+| Method | Path | What it does |
+| --- | --- | --- |
+| `GET` | <span id="get-capabilities" />`/capabilities` | Returns the desktop size, backend, features, and input limits as JSON. |
+| `GET` | `/screenshot.png` | Returns a PNG without the cursor, even when another client owns input; maximum 8 MiB and a 5-second timeout. |
+| `POST` | <span id="post-input" />`/input` | Sends a batch of binary input records. |
+| `GET`, `POST` | <span id="clipboard" />`/clipboard` | Reads or replaces the clipboard text. |
+| `GET` | <span id="get-metrics" />`/metrics` | Returns stream and resource metrics as JSON. |
+| `POST` | <span id="post-grants" />`/grants/watch`, `/grants/control` | Creates a [grant](/docs/remote-access#grants): a credential that opens only view-only streams, or only streams and `/control`. Add `?ttl=SECONDS`, up to 3600, which is also the default, and `connections=1` for a grant that opens one WebSocket. Returns `id`, `token`, `expires_in`, `scope`, and `connections` for a single-connection grant, as JSON. |
+| `DELETE` | <span id="delete-grants" />`/grants/ID` | Revokes the grant with that `id` and closes the connections opened with it. Returns 200. |
+| `GET` | `/`, `/index.html`, `/viewer.js` | Serves the viewer. |
+| WebSocket | `/stream` | Streams video and cursor images when supported. With no query parameter, it claims idle input. Use `?view=1` to watch without input or `?take=1` to take input from the current owner, which closes with code 4001. Add `clipboard=1` to a claiming or takeover stream to receive clipboard notices. |
+| WebSocket | `/control` | Sends input and receives a response for each event, without video. It can run next to a view-only `/stream`, and closes with code 4001 when a viewer takes control or code 4003 when it connects while input is owned. |
+
+The viewer HTML is served with `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY`, so another site cannot embed it and forward clicks to the desktop.
+
+The engine sends no CORS headers. A browser page on another origin can open a WebSocket when its origin is allowed, but the browser blocks its HTTP requests, including `/capabilities`, `/metrics`, and `/screenshot.png`. See [Embedded viewers and CORS](/docs/remote-access#embedded-viewers-and-cors).
+
+## Authentication
+
+- When the session has a token, send `Authorization: Bearer TOKEN`. Do not put the token in a request URL. See [Tokens](/docs/remote-access#tokens).
+- A WebSocket can send a grant's `token` in place of the session token. A watch grant opens `/stream?view=1`. A control grant opens `/stream`, `/stream?take=1`, `/stream?view=1`, and `/control`. Neither opens a URL with `clipboard=1`, and neither authorizes an HTTP request. A grant WebSocket connects from any origin, including `null`. See [Grants](/docs/remote-access#grants).
+- The `Host` must be `localhost`, `127.0.0.1`, or the authority configured with `--public`, with its port if specified. For the `--public` authority, an uppercase host name and port 443 are normalized before the comparison.
+- `Origin` is optional. Requests without it still need an accepted `Host` and any required token. If present, `Origin` must match the configured `--public` origin, an entry in `--allow-origin`, or a loopback origin whose host and port match the loopback `Host` header. Without `--public`, loopback origins on other ports are also accepted. Other values, including `null`, are rejected. See [Browser origins](/docs/remote-access#browser-origins) for accepted formats and browser HTTP limits.
+
+## Errors
+
+<span id="limits" />
+
+| Status | What to do |
+| --- | --- |
+| 400 `invalid_input` | Send a nonempty batch of valid records with the correct `Content-Length`. |
+| 400 `invalid_text` | Send clipboard text as UTF-8 without NUL characters. |
+| 401 `unauthorized` | Send the correct session token. |
+| 403 `forbidden` | Check the `Host` and `Origin` rules under [Authentication](#authentication). |
+| 404 `not_found` | Check the endpoint path. |
+| 405 `method_not_allowed` | Use the method listed for the endpoint. |
+| 409 `busy` | Close the input owner or wait, then check for partial input before retrying. A viewer that owns input is one owner; a view-only viewer is not. |
+| 411 `length_required` | Include `Content-Length` on `POST /input` and `POST /clipboard`. |
+| 413 `too_large` | Send no more than 256 input records per request or 256 KiB of clipboard text. |
+| 413 `clipboard_too_large` | The clipboard holds more than the 256 KiB read limit. |
+| 422 `unsupported_input` | Change the input or keyboard layout. |
+| 503 `busy` | Wait for the other screenshot request to finish. |
+| 503 `clipboard_busy` | Wait for the clipboard request queue to drain, then retry. |
+| 503 `clipboard_unavailable` | The desktop has no clipboard the engine can use, or the app that owns the clipboard did not answer within 2 seconds. Check `capabilities.clipboard`. |
+| 503 `screenshot_unavailable` | Check `screen-relay logs engine` and try again. |
+
+Errors are JSON with an `error` field.
+
+- A rejected input record returns its zero-based `index`. The records before it were applied, and that record and the ones after it were not.
+- A `busy` input reply returns an `applied` count. Text-only input can resume from it. For other input it is not a retry offset, because the engine drops queued text, pointer moves, and scrolls but still applies key and button events. Check the desktop before retrying.

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Desktop screen to browser</title>
+<script>
+  var t = new URLSearchParams(location.search).get("theme");
+  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  if (window.self === window.top) document.documentElement.setAttribute("data-top", "");
+</script>
+<style>
+  :root {
+    color-scheme: dark;
+    --ds-background-100: oklch(0 0 0);
+    --ds-background-200: oklch(0.027 0 0);
+    --ds-gray-100: oklch(0.218 0 0);
+    --ds-gray-400: oklch(0.301 0 0);
+    --ds-gray-600: oklch(0.623 0 0);
+    --ds-gray-900: oklch(0.706 0 0);
+    --ds-gray-1000: oklch(0.946 0 0);
+    --ds-blue-700: oklch(57.61% 0.2321 258.23);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+      color-scheme: light;
+      --ds-background-100: oklch(1 0 0);
+      --ds-background-200: oklch(0.984 0 0);
+      --ds-gray-100: oklch(0.961 0 0);
+      --ds-gray-400: oklch(0.937 0 0);
+      --ds-gray-600: oklch(0.732 0 0);
+      --ds-gray-900: oklch(0.42 0 0);
+      --ds-gray-1000: oklch(0.205 0 0);
+      --ds-blue-700: oklch(57.61% 0.2508 258.23);
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --ds-background-100: oklch(1 0 0);
+    --ds-background-200: oklch(0.984 0 0);
+    --ds-gray-100: oklch(0.961 0 0);
+    --ds-gray-400: oklch(0.937 0 0);
+    --ds-gray-600: oklch(0.732 0 0);
+    --ds-gray-900: oklch(0.42 0 0);
+    --ds-gray-1000: oklch(0.205 0 0);
+    --ds-blue-700: oklch(57.61% 0.2508 258.23);
+  }
+  html, body { margin: 0; background: transparent; }
+  :root[data-top], :root[data-top] body { background: var(--ds-background-100); }
+  svg { display: block; width: 100%; height: auto; font-family: Geist, "Geist Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .box { fill: var(--ds-background-200); stroke: var(--ds-gray-400); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .node { fill: var(--ds-gray-100); }
+  .engine { stroke: var(--ds-blue-700); }
+  .label { fill: var(--ds-gray-1000); font-size: 14px; font-weight: 500; }
+  .sub { fill: var(--ds-gray-900); font-size: 13px; }
+  .head { fill: var(--ds-gray-900); font-size: 13px; font-weight: 500; }
+  .tag { fill: var(--ds-gray-900); font-size: 12px; text-anchor: middle; }
+  .wire { fill: none; stroke: var(--ds-gray-600); stroke-width: 1; vector-effect: non-scaling-stroke; marker-end: url(#arrow); }
+  .icon { fill: none; stroke: var(--ds-gray-900); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  #arrow path { fill: none; stroke: var(--ds-gray-600); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 720 208" role="img" aria-labelledby="t d">
+  <title id="t">Desktop screen to browser</title>
+  <desc id="d">Inside a Linux VM, Desktop sends the screen to the relay engine. The engine sends video to Browser, where you watch the desktop.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M2 1.5 L6 4 L2 6.5"/>
+    </marker>
+  </defs>
+
+  <rect class="box" x="16" y="24" width="464" height="160" rx="12"/>
+  <text class="head" x="40" y="56">Linux VM</text>
+
+  <rect class="box node" x="40" y="80" width="160" height="80" rx="6"/>
+  <g class="icon" transform="translate(56 96)" aria-hidden="true">
+    <rect x="1" y="1" width="14" height="10" rx="1.5"/>
+    <path d="M8 11v4M5 15h6"/>
+  </g>
+  <text class="label" x="80" y="112">Desktop</text>
+  <text class="sub" x="56" y="136">Your screen</text>
+
+  <rect class="box node engine" x="264" y="80" width="192" height="80" rx="6"/>
+  <g class="icon" transform="translate(280 96)" aria-hidden="true">
+    <rect x="3" y="3" width="10" height="10" rx="1.5"/>
+    <path d="M6 0v3M10 0v3M6 13v3M10 13v3M0 6h3M0 10h3M13 6h3M13 10h3"/>
+  </g>
+  <text class="label" x="304" y="112">relay engine</text>
+  <text class="sub" x="280" y="136">streams the screen</text>
+
+  <rect class="box node" x="520" y="80" width="176" height="80" rx="6"/>
+  <g class="icon" transform="translate(536 96)" aria-hidden="true">
+    <circle cx="8" cy="8" r="7"/>
+    <ellipse cx="8" cy="8" rx="3" ry="7"/>
+    <path d="M1 8h14"/>
+  </g>
+  <text class="label" x="560" y="112">Browser</text>
+  <text class="sub" x="536" y="136">watch the desktop</text>
+
+  <path class="wire" d="M205 120H259"/>
+  <text class="tag" x="232" y="109">screen</text>
+  <path class="wire" d="M461 120H515"/>
+  <text class="tag" x="500" y="109">video</text>
+</svg>
+</body>
+</html>

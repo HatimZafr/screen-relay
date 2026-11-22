@@ -1,0 +1,10 @@
+.git
+.context
+node_modules
+**/results
+experiments
+docs
+build
+relay-engine
+.env
+**/*.log

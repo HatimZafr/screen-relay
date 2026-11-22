@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How streaming works</title>
+<script>
+  var t = new URLSearchParams(location.search).get("theme");
+  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  if (window.self === window.top) document.documentElement.setAttribute("data-top", "");
+</script>
+<style>
+  :root {
+    color-scheme: dark;
+    --ds-background-100: oklch(0 0 0);
+    --ds-background-200: oklch(0.027 0 0);
+    --ds-gray-100: oklch(0.218 0 0);
+    --ds-gray-400: oklch(0.301 0 0);
+    --ds-gray-600: oklch(0.623 0 0);
+    --ds-gray-900: oklch(0.706 0 0);
+    --ds-gray-1000: oklch(0.946 0 0);
+    --ds-blue-700: oklch(57.61% 0.2321 258.23);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+      color-scheme: light;
+      --ds-background-100: oklch(1 0 0);
+      --ds-background-200: oklch(0.984 0 0);
+      --ds-gray-100: oklch(0.961 0 0);
+      --ds-gray-400: oklch(0.937 0 0);
+      --ds-gray-600: oklch(0.732 0 0);
+      --ds-gray-900: oklch(0.42 0 0);
+      --ds-gray-1000: oklch(0.205 0 0);
+      --ds-blue-700: oklch(57.61% 0.2508 258.23);
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --ds-background-100: oklch(1 0 0);
+    --ds-background-200: oklch(0.984 0 0);
+    --ds-gray-100: oklch(0.961 0 0);
+    --ds-gray-400: oklch(0.937 0 0);
+    --ds-gray-600: oklch(0.732 0 0);
+    --ds-gray-900: oklch(0.42 0 0);
+    --ds-gray-1000: oklch(0.205 0 0);
+    --ds-blue-700: oklch(57.61% 0.2508 258.23);
+  }
+  html, body { margin: 0; background: transparent; }
+  :root[data-top], :root[data-top] body { background: var(--ds-background-100); }
+  svg { display: block; width: 100%; height: auto; font-family: Geist, "Geist Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .box { fill: var(--ds-background-200); stroke: var(--ds-gray-400); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .node { fill: var(--ds-gray-100); }
+  .engine { stroke: var(--ds-blue-700); }
+  .label { fill: var(--ds-gray-1000); font-size: 14px; font-weight: 500; }
+  .sub { fill: var(--ds-gray-900); font-size: 13px; }
+  .head { fill: var(--ds-gray-900); font-size: 13px; font-weight: 500; }
+  .tag { fill: var(--ds-gray-900); font-size: 12px; }
+  .wire { fill: none; stroke: var(--ds-gray-600); stroke-width: 1; vector-effect: non-scaling-stroke; marker-end: url(#arrow); }
+  .both { marker-start: url(#arrow); }
+  .icon { fill: none; stroke: var(--ds-gray-900); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  #arrow path { fill: none; stroke: var(--ds-gray-600); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 760 368" role="img" aria-labelledby="t d">
+  <title id="t">How streaming works</title>
+  <desc id="d">Along the top, an app paints the Desktop on the Linux VM. The screen-relay engine captures only the changed part of the screen, encodes it at the current bitrate, and sends frames over the network to the Viewer in the browser. The Viewer holds each frame for up to 100 milliseconds so motion stays even. Along the bottom, the browser sends an acknowledgement with each frame's wait time back over the network. Rate control on the VM learns the link's round trip and whether a queue is building, then sets the bitrate, how many frames are in flight, and whether to pause capture.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M2 1.5 L6 4 L2 6.5"/>
+    </marker>
+  </defs>
+
+  <rect class="box" x="16" y="16" width="424" height="336" rx="12"/>
+  <text class="head" x="40" y="40">Linux VM</text>
+  <rect class="box" x="504" y="16" width="240" height="336" rx="12"/>
+  <text class="head" x="528" y="40">Browser</text>
+  <rect class="box node" x="40" y="56" width="120" height="112" rx="6"/>
+  <g class="icon" transform="translate(56 81)" aria-hidden="true"><rect x="1" y="1" width="14" height="10" rx="1.5"/><path d="M8 11v4M5 15h6"/></g>
+  <text class="label" x="80" y="95">Desktop</text>
+  <text class="sub" x="56" y="121">apps paint</text>
+  <text class="sub" x="56" y="139">the screen</text>
+  <rect class="box node engine" x="224" y="56" width="192" height="112" rx="6"/>
+  <g class="icon" transform="translate(240 72)" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1.5"/><path d="M6 0v3M10 0v3M6 13v3M10 13v3M0 6h3M0 10h3M13 6h3M13 10h3"/></g>
+  <text class="label" x="264" y="86">screen-relay engine</text>
+  <text class="sub" x="240" y="112">captures only changed</text>
+  <text class="sub" x="240" y="130">areas, then encodes at</text>
+  <text class="sub" x="240" y="148">the current bitrate</text>
+  <rect class="box node" x="528" y="56" width="192" height="112" rx="6"/>
+  <g class="icon" transform="translate(544 72)" aria-hidden="true"><circle cx="8" cy="8" r="7"/><ellipse cx="8" cy="8" rx="3" ry="7"/><path d="M1 8h14"/></g>
+  <text class="label" x="568" y="86">Viewer</text>
+  <text class="sub" x="544" y="112">decodes each frame,</text>
+  <text class="sub" x="544" y="130">holds it up to 100 ms</text>
+  <text class="sub" x="544" y="148">to keep motion even</text>
+  <rect class="box node" x="40" y="216" width="272" height="112" rx="6"/>
+  <g class="icon" transform="translate(56 232)" aria-hidden="true"><path d="M2 12a6 6 0 0 1 12 0M2 12h12M8 12l3-4"/></g>
+  <text class="label" x="80" y="246">Rate control</text>
+  <text class="sub" x="56" y="272">learns the link's normal round trip</text>
+  <text class="sub" x="56" y="290">and whether the network is queuing,</text>
+  <text class="sub" x="56" y="308">with the viewer's own wait taken out</text>
+  <rect class="box node" x="528" y="216" width="192" height="112" rx="6"/>
+  <g class="icon" transform="translate(544 232)" aria-hidden="true"><circle cx="8" cy="8" r="7"/><path d="M4.5 8.5l2.5 2.5 4.5-5"/></g>
+  <text class="label" x="568" y="246">Acknowledgement</text>
+  <text class="sub" x="544" y="272">sent when a frame is</text>
+  <text class="sub" x="544" y="290">shown, with how long</text>
+  <text class="sub" x="544" y="308">it waited in the viewer</text>
+  <path class="wire" d="M164 112H220"/>
+  <path class="wire" d="M420 112H524"/>
+  <path class="wire" d="M624 172V212"/>
+  <path class="wire" d="M524 272H316"/>
+  <path class="wire" d="M268 212V172"/>
+  <text class="tag" x="192" y="101" text-anchor="middle">paints</text>
+  <text class="tag" x="472" y="101" text-anchor="middle">frames</text>
+  <text class="tag" x="632" y="196">after showing</text>
+  <text class="tag" x="400" y="261" text-anchor="middle">wait time</text>
+  <text class="tag" x="260" y="196" text-anchor="end">bitrate, frames on the way, pause</text>
+</svg>
+</body>
+</html>

@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  check-release:
+    name: Check for new version
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      needs_github_release: ${{ steps.check.outputs.needs_github_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Compare package.json version to npm and check GitHub release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          LOCAL_VERSION=$(node -p "require('./package.json').version")
+          if ! NPM_VERSION=$(npm view "$PACKAGE_NAME@$LOCAL_VERSION" version 2>npm-view.err); then
+            grep -q E404 npm-view.err || { cat npm-view.err; exit 1; }
+            NPM_VERSION=""
+          fi
+          echo "Local version: $LOCAL_VERSION"
+
+          if [ "$LOCAL_VERSION" != "$NPM_VERSION" ]; then
+            echo "$LOCAL_VERSION is not on npm"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "needs_github_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "$LOCAL_VERSION is already on npm, skipping publish"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            if gh release view "v$LOCAL_VERSION" >/dev/null 2>&1; then
+              echo "GitHub release v$LOCAL_VERSION exists"
+              echo "needs_github_release=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "GitHub release v$LOCAL_VERSION is missing, will create it"
+              echo "needs_github_release=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          echo "version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
+
+  publish-npm:
+    name: Publish to npm
+    needs: check-release
+    if: needs.check-release.outputs.should_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: Release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Publish
+        env:
+          VERSION: ${{ needs.check-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          if npm view "${PACKAGE_NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${PACKAGE_NAME}@${VERSION} is already published; skipping"
+          else
+            npm publish --access public
+          fi
+
+  github-release:
+    name: Create GitHub Release
+    needs: [check-release, publish-npm]
+    if: >-
+      always() &&
+      needs.check-release.outputs.needs_github_release == 'true' &&
+      (needs.publish-npm.result == 'success' || needs.publish-npm.result == 'skipped')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Extract changelog entry
+        run: |
+          awk '/<!-- release:start -->/{found=1; next} /<!-- release:end -->/{found=0} found{print}' CHANGELOG.md > /tmp/release-notes.md
+          LINES=$(wc -l < /tmp/release-notes.md | tr -d ' ')
+          if [ "$LINES" -lt 2 ]; then
+            echo "Error: No release notes found between <!-- release:start --> and <!-- release:end --> markers in CHANGELOG.md"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.check-release.outputs.version }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+          else
+            echo "Creating release $TAG..."
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$TAG" \
+              --notes-file /tmp/release-notes.md
+          fi

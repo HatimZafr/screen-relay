@@ -1,0 +1,28 @@
+{
+  "title": "screen-relay documentation",
+  "description": "Stream a Linux, macOS, or Windows desktop to a browser and control it from a CLI or a Node SDK.",
+  "root": true,
+  "pages": [
+    "index",
+    "getting-started",
+    "how-streaming-works",
+    "---Platforms---",
+    "linux",
+    "termux",
+    "macos",
+    "windows",
+    "---Reference---",
+    "cli",
+    "configuration",
+    "sdk",
+    "protocol",
+    "agent-skills",
+    "---Guides---",
+    "remote-access",
+    "docker",
+    "vercel-sandbox",
+    "---Help---",
+    "troubleshooting",
+    "changelog"
+  ]
+}

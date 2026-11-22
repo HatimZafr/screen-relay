@@ -1,0 +1,86 @@
+---
+title: Windows
+description: Stream and control the signed-in desktop of a Windows PC.
+---
+
+On Windows, screen-relay attaches to the desktop of the signed-in user. It starts no virtual display and no desktop. The `windows` backend is the only backend on Windows.
+
+<Video src="/demos/windows.mp4" light="/demos/windows.jpg" previewAriaLabel="Play the Windows demo" playing muted loop playsInline />
+
+## Build the engine
+
+- Windows 10 or later, on x64.
+- Node 22 or newer, with npm.
+- A user signed in at the PC's own screen. Start screen-relay from a terminal in that session.
+
+## Install
+
+Install the CLI with `npm install -g screen-relay`, as in [Getting started](/docs/getting-started#install-screen-relay). Then set up the PC:
+
+```sh
+screen-relay install
+```
+
+Setup uses MSYS2 at `C:\msys64`. If MSYS2 is missing, setup installs it with winget (`winget install MSYS2.MSYS2`). Without winget, setup stops and asks you to install MSYS2 from https://www.msys2.org. Setup runs MSYS2 only when your account or an administrator owns it and no other account can write to it. A folder at the root of `C:\` inherits a rule that lets every user add files to it, so an MSYS2 that setup installs gets new rules: full control for SYSTEM, Administrators, and your account, and read access for Users. If you installed MSYS2 yourself and only you use it, setup stops and prints an `icacls` command that sets the same rules. Run that command, then run `screen-relay install` again. If another account owns the installation, delete `C:\msys64` and run `screen-relay install` again. Then setup installs `make`, `diffutils`, `mingw-w64-ucrt-x86_64-gcc`, `mingw-w64-ucrt-x86_64-pkgconf`, `mingw-w64-ucrt-x86_64-libwebsockets`, and `mingw-w64-ucrt-x86_64-x264` with pacman, and builds the engine.
+
+At a terminal, setup asks before it installs anything. Anywhere else, pass `--yes`. Setup is safe to repeat. On Windows, `--backend` accepts only `windows`.
+
+## Start a session
+
+Run this in a terminal on the signed-in user's desktop:
+
+```sh
+screen-relay up -d
+```
+
+`up` attaches to that desktop. It prints the viewer link, and the link always carries a token, as on a Mac. A PC that is not set up is set up first. Open the viewer link in a browser. For a viewer on another machine, see [Remote access](/docs/remote-access). Stop the session with `screen-relay down`.
+
+Over SSH or from a service session, `install` works and `up` fails. The error carries the engine's message, which is one of these:
+
+- `No display is attached to this session; start relay in the signed-in user's desktop session`
+- `Desktop Duplication is unavailable; start relay in the signed-in user's desktop session`
+
+To start an app on the signed-in desktop, run:
+
+```sh
+screen-relay run -- APP
+```
+
+APP must be an `.exe` program. A `.cmd` or `.bat` file is started through `cmd /c`, so run it as `screen-relay run -- cmd /c FILE.cmd`.
+
+`--restart` is not supported on Windows. `screen-relay down` leaves apps started with `run` running.
+
+### Choose a display
+
+screen-relay captures the primary display by default. To capture another, pass its name, such as `'\\.\DISPLAY2'`:
+
+```sh
+screen-relay up -d --output '\\.\DISPLAY2'
+```
+
+Quote the name so the shell keeps its backslashes. An unknown name lists the attached displays.
+
+`--display` is not supported on Windows. `display.resolution` is ignored, and screen-relay prints a warning if your configuration sets it.
+
+## What you will notice
+
+- Text is typed with the keyboard layout of the foreground window. Characters that layout cannot type are sent as Unicode input.
+- If the display's size or position changes, the stream stops with `The display changed from WxH to WxH or moved; restart relay to stream it`. Run `screen-relay up` again.
+
+## Check the machine
+
+```sh
+screen-relay doctor
+```
+
+The checks cover the Windows version, MSYS2, the engine, and whether the command runs in a desktop session. The MSYS2 check fails when another account owns the installation or can write to it.
+
+## Remote access
+
+Remote access works as it does on Linux. See [Remote access](/docs/remote-access).
+
+## Limits
+
+- The engine captures one display at a time: the primary display unless you pass `--output`. A display wider or taller than 16384 pixels is halved until it fits. The streamed size must be 320 to 16384 pixels wide and 240 to 16384 pixels high, with even dimensions.
+- Windows refuses input to elevated (administrator) windows, and the engine reports that input as not applied.
+- Not supported in this version: running `up` or `run` over SSH, a PC with nobody signed in, Remote Desktop sessions, Windows on ARM, and MSYS2 at a root other than `C:\msys64`.

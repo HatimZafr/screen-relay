@@ -1,0 +1,151 @@
+---
+title: SDK
+description: Control a screen-relay desktop from Node.
+---
+
+The Node SDK requires Node 22 or newer. Start a desktop on the same machine with [screen-relay up -d](/docs/getting-started#start-a-session) first.
+
+## Install and import
+
+```sh
+npm install screen-relay
+```
+
+### One-shot calls
+
+A viewer opens with control when input is idle. If it has control, `click` returns `busy`; choose **Release control** in the viewer first.
+
+```js
+import { createClient } from 'screen-relay';
+import { writeFile } from 'node:fs/promises';
+const desktop = createClient();
+await desktop.click(0.5, 0.5);
+await writeFile('screen.png', await desktop.screenshot());
+```
+
+## Two ways to connect
+
+- `createClient(options)` makes one-shot calls such as `click` and `type`.
+- `await connect(options)` opens a WebSocket control session. It sends individual input events until `close()`.
+
+### A control session
+
+Close the session to release input:
+
+```js
+import { connect } from 'screen-relay';
+
+const desktop = await connect();
+try {
+  await desktop.input({ type: 'pointerMove', x: 0.5, y: 0.5 });
+} finally {
+  desktop.close();
+}
+```
+
+- A control session can run while a viewer watches. Connecting while a viewer owns input fails with `busy`, and a running session ends with `control_taken` when a viewer chooses **Take control**.
+- The session exposes `surface: { width, height }`.
+- It allows 32 pending input requests.
+- An acknowledgement timeout closes the session.
+- Input is not replayed after disconnecting.
+- An acknowledgement does not guarantee the application reacted.
+
+## One input owner at a time
+
+- An SDK control session owns input until it closes or a viewer takes control. A viewer that opens during an SDK control session can watch without interrupting it.
+- Choose **Release control** in a viewer that owns input, or close it, before sending input from the CLI or SDK. Otherwise the call returns `busy`.
+- A viewer that chooses **Take control** ends a control session with `control_taken`.
+- Status, capabilities, screenshots, and the clipboard do not need input control.
+
+## Methods
+
+Coordinates are fractions from `0` to `1`, measured from the top-left. See [Input rules](/docs/cli#input-rules). Client input methods return `{ events: number }`.
+
+| Method | Result or action |
+| --- | --- |
+| `click(x, y, { button }?)` | Click with `left` (default), `middle`, or `right`. |
+| `move(x, y)` | Move the pointer. |
+| `scroll(x, y, { dx, dy }?)` | Scroll by integer notches after moving. Positive `dx` is right, positive `dy` is down; at least one must be nonzero. |
+| `key(...combos)` | Press physical keys, such as `ctrl+l`; `cmd` and `meta` alias `super`. |
+| `type(text)` | Send one event per Unicode scalar using the remote keyboard layout. Empty text sends nothing. |
+| `input(events)` | Send a nonempty array of [input events](#input-events). |
+| `capabilities()` | Backend, screen size, `fps`, `max_input_batch`, and features. |
+| `status()` | Transport metrics; unavailable resource counters are `null`. |
+| `screenshot()` | PNG bytes, without the viewer's cursor overlay. |
+| `clipboard()` | The clipboard text, or an empty string when the clipboard holds no text. |
+| `setClipboard(text)` | Replace the clipboard text; an empty string clears it. Text is UTF-8, up to 256 KiB, without NUL characters. Returns no value. |
+
+`capabilities(options)`, `status(options)`, and `screenshot(options, path?)` are also standalone exports. `screenshot` returns PNG bytes and writes them to `path` when one is given.
+
+Input batches:
+
+- Hold at most `max_input_batch` events, up to 256.
+- Keep a key combination or scroll inside one batch.
+- Release held keys and buttons at each batch boundary.
+- Run in order and are not retried. Await each call to keep actions in order.
+
+### Session methods
+
+| Method | Result or action |
+| --- | --- |
+| `input(event)` | Send one [input event](#input-events) and wait for acknowledgement. Returns no value. |
+| `screenshot(path?)` | PNG bytes; writes them to `path` if provided. |
+| `capabilities()`, `status()` | Same as the client methods. |
+| `close()` | Close the session and release held keys and buttons. |
+
+## Input events
+
+| Type | Fields |
+| --- | --- |
+| `keyDown`, `keyUp` | `key`: USB HID usage from 0 to 231. |
+| `pointerMove` | `x`, `y`: coordinates from 0 to 1. |
+| `buttonDown`, `buttonUp` | `button`: 1 for left, 2 for middle, 3 for right; `x`, `y`. |
+| `wheel` | `axis`: `vertical` or `horizontal`; `delta`: a multiple of 120 from -1200 to 1200; `x`, `y`. |
+| `releaseAll` | No fields. |
+| `text` | `codepoint`: Unicode scalar from 1 to 0x10FFFF, excluding surrogates. |
+
+Optional `buttons` (0 to 31) and `modifiers` (0 to 255) default to 0. Both must be 0 for `text` and `releaseAll`.
+
+## Options
+
+Pass these options to `createClient`, the standalone functions, or `connect`. Control sessions reject a nonempty `ca`, `certificate`, or `connect` with `invalid_option`.
+
+| Option | Meaning |
+| --- | --- |
+| `url` | Origin only; default `http://127.0.0.1:8080`. HTTP only for `localhost` and `127.0.0.1`; HTTPS elsewhere. No credentials, path, query, or fragment. |
+| `token` | 64 lowercase hexadecimal characters. Required for remote hosts. See [Tokens](/docs/remote-access#tokens). |
+| `timeout` | Integer from 1 to 2147483647 milliseconds; default 10000. Per HTTP request, control connection, and input acknowledgement. |
+| `ca` | PEM file of CA certificates to trust for HTTPS instead of the system's. The server's certificate must match the URL host name. |
+| `certificate` | PEM file with the exact server certificate to require for HTTPS. The host name is not checked, so a self-signed certificate works even when it names another host. Use this or `ca`, not both. |
+| `connect` | Address to dial instead of the URL host. The URL host remains the `Host` header and, unless the certificate is pinned, the name the certificate must match. |
+| `signal` | `AbortSignal` that cancels requests or the control session. |
+
+- Redirects are not followed.
+- The engine closes screenshot requests after 5 seconds.
+- Screenshots larger than 8 MiB are rejected.
+
+## Errors
+
+- Match `RelayError.reason`, not the message.
+- `createClient` can throw during option validation. Async calls reject.
+- Errors also expose `code`, `message`, `class`, `exitCode`, `status`, and optional `hint`, `data`, and `next`. See [error reasons](/docs/cli#error-reasons).
+
+| Reason | Cause and action |
+| --- | --- |
+| `busy` | Another input owner, a full input queue, 32 pending session requests, or another screenshot. Wait for it to finish before retrying. |
+| `unauthorized`, `forbidden` | The engine rejected the token, host, or origin. Check the connection settings. |
+| `unreachable`, `timeout` | Check the URL, network, and TLS certificate. Increase `timeout` if needed. |
+| `disconnected` | The control session closed or an HTTP response ended early. If the control session closed, connect again. For input calls, check a screenshot before retrying. |
+| `control_taken` | A viewer chose **Take control**, which ended the control session. Pending input and later calls to `session.input()` and `session.screenshot()` reject with this reason. `session.capabilities()` and `session.status()` still make independent HTTP requests. Connect again after the viewer releases control. |
+| `invalid_input`, `invalid_option` | Check the URL, token, input, and options. |
+| `unsupported_input` | The backend cannot apply the event or type the character. Change the input or keyboard layout. |
+| `component_failed` | The engine could not complete the request. For screenshots, check `screen-relay logs engine` and [Wayland requirements](/docs/linux#compositors). |
+| `canceled` | The `signal` aborted the request or session. Use a fresh signal to retry. |
+| `protocol_error`, `io_error` | The response was invalid or too large, or a local certificate or screenshot file could not be read or written. |
+
+When an input request fails:
+
+- `error.data?.applied` counts the events the engine applied. Some validation and protocol errors do not include it.
+- After `invalid_input` or `unsupported_input`, the events before that count were applied, and the rejected event and the ones after it were not. Fix the rejected event and send from there.
+- After `busy`, text-only input can resume from the count. For other input the count is not an offset, because the engine drops queued text, pointer moves, and scrolls but still applies key and button events. Check a screenshot before sending anything again.
+- If a reply was lost or invalid, the last batch may also have been applied. Check a screenshot before retrying.

@@ -1,0 +1,69 @@
+---
+title: Termux
+description: Share and control the Android screen or run an X11 desktop from Termux.
+---
+
+Share the Android screen from Termux and click, scroll, or type from a browser. The Android backend uses Android Debug Bridge (ADB) to capture the screen and send input.
+
+## Install
+
+Use [Termux from F-Droid or GitHub](https://github.com/termux/termux-app#installation) with access to the Termux package repositories. To pair over Wi-Fi, use Android 11 or later with [Wireless debugging](https://developer.android.com/tools/adb#wireless). The engine builds for the architecture of your Termux installation, including `armeabi-v7a` (32-bit ARM), `arm64-v8a` (64-bit ARM), `x86` (32-bit x86), and `x86_64` (64-bit x86). Run the commands inside Termux as your regular user.
+
+Build and install the package from this checkout using the [Termux instructions in the README](https://github.com/HatimZafr/screen-relay#android-with-termux).
+
+## Pair with Android
+
+1. In Android **Settings**, open **Developer options** and turn on **Wireless debugging**.
+2. Set up a private socket for the ADB server in Termux.
+
+   ```sh
+   mkdir -p -m 700 "$HOME/.screen-relay-adb"
+   export ADB_SERVER_SOCKET="localfilesystem:$HOME/.screen-relay-adb/server.sock"
+   ```
+
+3. In **Wireless debugging**, choose **Pair device with pairing code**. Keep the dialog open, for example by using split screen. Replace `PAIR_PORT` with the port shown in the pairing dialog, then enter the code when ADB prompts.
+
+   ```sh
+   adb pair 127.0.0.1:PAIR_PORT
+   ```
+
+4. Return to the main **Wireless debugging** screen. Replace `CONNECT_PORT` with the port shown under **IP address & port** and connect.
+
+   ```sh
+   adb connect 127.0.0.1:CONNECT_PORT
+   adb devices
+   ```
+
+   The device should appear with the state `device`.
+
+## Share the Android screen
+
+```sh
+screen-relay up -d --backend android
+```
+
+If multiple devices are connected, use `--output` with the serial listed by `adb devices`. Open the token-bearing viewer link from `up`. To use a browser on another device, follow [Remote access](/docs/remote-access). Treat the link as a credential because it grants control of the Android device.
+
+Click to tap, drag to swipe, and scroll to move through apps. `Escape` sends Android Back, and `Home` opens the launcher. Typing supports printable ASCII. Start the session in the orientation you want to share, and restart it after changing the orientation.
+
+Run `screen-relay down` to stop the session. If it fails to start, run `screen-relay doctor` from Termux.
+
+## Start an X11 desktop
+
+Use the X11 backend to stream a virtual XFCE desktop and its applications.
+
+```sh
+screen-relay install --backend x11
+screen-relay up -d --backend x11
+screen-relay run -- xfce4-terminal
+```
+
+Open the viewer link printed by `up` in a browser on the same Android device. For a browser on another device, see [Remote access](/docs/remote-access). Run `screen-relay down` to stop the session.
+
+If you already have an X11 desktop running, pass its display number to attach to it. Replace `:1` with the value of `DISPLAY` in that session. If the display uses an authority file, keep its `XAUTHORITY` environment variable set when you run `up`.
+
+```sh
+screen-relay up -d --backend x11 --display :1
+```
+
+If a virtual desktop fails to start, run `SCREEN_RELAY_BACKEND=x11 screen-relay doctor` and read `screen-relay logs display`.

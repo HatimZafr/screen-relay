@@ -1,0 +1,37 @@
+# screen-relay settings. Every key is optional; the values below are the defaults.
+
+display:
+  # WIDTHxHEIGHT. Width even 320..16384, height even 240..16384.
+  resolution: 1280x720
+  # auto, on or off. Linux only, for the XFCE desktop screen-relay starts.
+  # auto turns the compositor off when stream.fps is above 60.
+  compositor: auto
+
+stream:
+  # 10..120.
+  fps: 60
+  # Bits per second, 250000..100000000. A k or M suffix is 1000-based.
+  # Require min <= start <= max.
+  bitrate:
+    min: 1M
+    start: 8M
+    max: 40M
+
+server:
+  # 1..65535.
+  port: 8080
+  # bind: 127.0.0.1
+  # public: https://desktop.example.com
+  # allow_origin: https://app.example.com,http://localhost:8081
+  # tls_cert: /path/fullchain.pem
+  # tls_key: /path/key.pem
+
+keyboard:
+  # Layout name such as us, de or fr, or a comma-separated list. Linux only.
+  layout: us
+
+# Linux only. xfce, none, or a command. Default: xfce (x11) or foot (wayland), or none with --display.
+# desktop: xfce
+
+# x11, wayland, macos, or windows. Default: x11 when the engine has it, else wayland; macos on macOS; windows on Windows.
+# backend: x11

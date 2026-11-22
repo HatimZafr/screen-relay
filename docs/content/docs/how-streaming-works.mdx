@@ -1,0 +1,102 @@
+---
+title: How streaming works
+description: How screen-relay gets each frame from the desktop to your browser, and how it adapts the frame rate, bitrate, and smoothness to your connection.
+---
+
+screen-relay streams frames from the VM to your browser. The engine uses the browser's reports to match the stream to your connection. This page covers which settings change what you see, and what to expect on a slow, long, or unsteady link.
+
+## The streaming loop
+
+<Diagram name="streaming-loop" title="How a frame travels from the desktop to the browser and how feedback returns" aspectRatio="760 / 368" />
+
+Each frame takes this path:
+
+1. An app paints the desktop on the VM.
+2. The engine captures the screen only when it changed, and only the part that changed.
+3. The engine encodes the frame at the current bitrate.
+4. The frame travels to the browser.
+5. The viewer decodes the frame and shows it on a steady clock. When frames arrive unevenly, it holds each one briefly so motion stays even.
+6. After showing a frame, the viewer sends an acknowledgement that says how long the frame waited in the viewer.
+
+The engine uses the acknowledgements to adapt:
+
+1. It learns the link's normal round trip and whether a queue is building in the network. The time a frame waits in the viewer is removed, so a slow browser is not mistaken for a slow network.
+2. It sets how many frames can be on the way at once. The limit follows the link's round trip, so a long link does not lose frames.
+3. It pauses capture while a queue keeps standing, so frames do not pile up behind it.
+4. It raises the bitrate while the link is clear and lowers it when a queue stands in the network. The bitrate stays between `stream.bitrate.min` and `stream.bitrate.max`.
+
+## Frame rate
+
+The stream runs at up to `stream.fps` frames per second, from 10 to 120. The default is 60. An idle desktop sends no frames, because the engine captures only when the screen changes.
+
+The compositor in screen-relay's own XFCE desktop repaints at most 60 times a second. When `stream.fps` is above 60, screen-relay turns it off so apps can update the screen faster. That also removes window shadows and transparency. Set `display.compositor` to `on` or `off` to decide this yourself; see [Configuration](/docs/configuration). A desktop you attach to with `--display` keeps its own settings.
+
+## Picture quality on a slow or long link
+
+The bitrate starts at `stream.bitrate.start` (8 Mbps by default) and then follows the link:
+
+- **Clear link:** the bitrate rises toward `stream.bitrate.max` (40 Mbps).
+- **Queue in the network:** the bitrate falls toward `stream.bitrate.min` (1 Mbps). The picture gets softer, but motion stays current.
+
+On a long link, the engine allows more frames on the way at once, based on the link's round trip. The stream keeps its frame rate instead of waiting for each acknowledgement.
+
+See [Configuration](/docs/configuration#keys) for the bitrate keys and their defaults.
+
+## Smoothness on an unsteady link
+
+When frames arrive at uneven intervals, the viewer holds each frame for a short time before it shows it, so motion stays even. The hold is at most 100 ms and is near zero on a clean link.
+
+The hold adds to the delay between an action on the VM and the screen. On a very unsteady link, you trade up to 100 ms of latency for smoother motion.
+
+## When the link stalls
+
+If the engine has frames outstanding and receives no acknowledgement for about 3 seconds, it closes the stream. The viewer reconnects on its own up to five times, with growing delays. After that, it shows a message asking you to reconnect manually. Reloading the page starts a new stream.
+
+## Inside the engine
+
+This section explains how the engine decides. You do not need it to run screen-relay.
+
+### One frame inside the engine
+
+<Diagram name="engine-pipeline" title="The stages one frame goes through inside the engine" aspectRatio="720 / 424" />
+
+Each frame passes through these stages in order:
+
+1. **Wait.** Nothing is captured while the screen is still. The engine waits for the desktop to report a change.
+2. **Admit.** The engine takes a frame only if fewer frames are on the way than the stream allows and capture is not paused.
+3. **Pace.** A rate limiter keeps capture at the configured frame rate. It keeps a reserve of two frames, so a short burst of changes is not delayed.
+4. **Capture.** The engine reads only the region of the screen that changed.
+5. **Convert and compare.** The engine converts the region for the encoder block by block. It marks the blocks whose pixels did not change, so the encoder skips them. If nothing changed, it sends no frame.
+6. **Encode.** The engine encodes at the current bitrate. The first frame of a session, and the first frame after a recovery, is a keyframe that the viewer can start from. When the screen goes quiet, the engine sends a few refinement frames that sharpen the last picture, then stops.
+7. **Send.** The engine queues the frame to the viewer with its capture time and a sequence number.
+
+### How acknowledgements become decisions
+
+<Diagram name="engine-flow" title="How acknowledgements become the frame window, the pause, and the bitrate" aspectRatio="720 / 560" />
+
+Each acknowledgement gives the engine two numbers: the time from capture to acknowledgement, and how long the frame waited in the viewer. The engine derives two values from them:
+
+- **Base delay.** The link's normal delay. It is the shortest network delay over the last 10 seconds, plus the longest recent viewer wait, up to 100 ms. A viewer that starts holding frames does not look like congestion.
+- **Standing queue.** The smallest delay above the base over one round trip. A single late burst leaves it at zero, because some frames in that round trip still arrive on time. Real congestion raises it.
+
+The engine turns these into three decisions:
+
+- **Frame window.** How many frames can be on the way is sized from the largest recent delay, plus two frames. Before the first acknowledgement, one frame is allowed.
+- **Pause.** Capture pauses when the standing queue, viewer wait included, reaches the base delay plus two frame intervals. Before the first acknowledgement, the limit is 250 ms.
+- **Bitrate.** The engine uses the network part of the standing queue, which is the queue with the viewer's wait taken out:
+  - When that queue is high, the bitrate drops by a quarter.
+  - When that queue is clear, the bitrate rises 10% a second.
+  - The bitrate always stays between `stream.bitrate.min` and `stream.bitrate.max`, and it is never cut before the first acknowledgement.
+
+Two safety limits apply regardless. At most 3 seconds of frames and 8 MiB can be on the way. The stream also closes after about 3 seconds without progress (see [When the link stalls](#when-the-link-stalls)).
+
+The engine takes the round trip and the bitrate from different sources, depending on the connection:
+
+- **On Linux over a direct connection:** the operating system's TCP statistics.
+- **Behind a proxy, and on macOS and Windows:** the acknowledgements, as described above.
+
+## Next steps
+
+- [Configuration](/docs/configuration): set the frame rate and bitrate limits.
+- [HTTP API](/docs/protocol): the stream's wire format.
+- [Troubleshooting](/docs/troubleshooting): fix a stream that is slow or does not start.

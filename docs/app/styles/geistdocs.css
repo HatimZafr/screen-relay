@@ -1,0 +1,37 @@
+@import "@vercel/geistdocs/styles.css";
+
+:root {
+  --font-sans: var(--font-geist-sans);
+  font-feature-settings:
+    "rlig" 1,
+    "calt" 0,
+    "ss11" 1;
+}
+
+@layer base {
+  body {
+    @apply text-gray-1000;
+  }
+}
+
+@container (max-width: 960px) {
+  #nd-page {
+    @apply px-6;
+  }
+
+  #nd-page > .text-gray-900:first-child {
+    @apply hidden;
+  }
+}
+
+#nd-toc {
+  @apply text-gray-1000;
+}
+
+#nd-toc a {
+  @apply text-gray-900 hover:text-gray-1000;
+}
+
+#nd-toc a[data-active="true"] {
+  @apply text-gray-1000;
+}

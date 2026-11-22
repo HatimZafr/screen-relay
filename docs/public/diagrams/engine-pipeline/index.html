@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inside the engine: one frame</title>
+<script>
+  var t = new URLSearchParams(location.search).get("theme");
+  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  if (window.self === window.top) document.documentElement.setAttribute("data-top", "");
+</script>
+<style>
+  :root {
+    color-scheme: dark;
+    --ds-background-100: oklch(0 0 0);
+    --ds-background-200: oklch(0.027 0 0);
+    --ds-gray-100: oklch(0.218 0 0);
+    --ds-gray-400: oklch(0.301 0 0);
+    --ds-gray-600: oklch(0.623 0 0);
+    --ds-gray-900: oklch(0.706 0 0);
+    --ds-gray-1000: oklch(0.946 0 0);
+    --ds-blue-700: oklch(57.61% 0.2321 258.23);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+      color-scheme: light;
+      --ds-background-100: oklch(1 0 0);
+      --ds-background-200: oklch(0.984 0 0);
+      --ds-gray-100: oklch(0.961 0 0);
+      --ds-gray-400: oklch(0.937 0 0);
+      --ds-gray-600: oklch(0.732 0 0);
+      --ds-gray-900: oklch(0.42 0 0);
+      --ds-gray-1000: oklch(0.205 0 0);
+      --ds-blue-700: oklch(57.61% 0.2508 258.23);
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --ds-background-100: oklch(1 0 0);
+    --ds-background-200: oklch(0.984 0 0);
+    --ds-gray-100: oklch(0.961 0 0);
+    --ds-gray-400: oklch(0.937 0 0);
+    --ds-gray-600: oklch(0.732 0 0);
+    --ds-gray-900: oklch(0.42 0 0);
+    --ds-gray-1000: oklch(0.205 0 0);
+    --ds-blue-700: oklch(57.61% 0.2508 258.23);
+  }
+  html, body { margin: 0; background: transparent; }
+  :root[data-top], :root[data-top] body { background: var(--ds-background-100); }
+  svg { display: block; width: 100%; height: auto; font-family: Geist, "Geist Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .box { fill: var(--ds-background-200); stroke: var(--ds-gray-400); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .node { fill: var(--ds-gray-100); }
+  .engine { stroke: var(--ds-blue-700); }
+  .label { fill: var(--ds-gray-1000); font-size: 14px; font-weight: 500; }
+  .sub { fill: var(--ds-gray-900); font-size: 13px; }
+  .head { fill: var(--ds-gray-900); font-size: 13px; font-weight: 500; }
+  .tag { fill: var(--ds-gray-900); font-size: 12px; }
+  .wire { fill: none; stroke: var(--ds-gray-600); stroke-width: 1; vector-effect: non-scaling-stroke; marker-end: url(#arrow); }
+  .both { marker-start: url(#arrow); }
+  .icon { fill: none; stroke: var(--ds-gray-900); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  #arrow path { fill: none; stroke: var(--ds-gray-600); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 720 424" role="img" aria-labelledby="t d">
+  <title id="t">Inside the engine: one frame</title>
+  <desc id="d">Inside the screen-relay engine, each frame goes through six stages. The engine waits for a screen change, or for a few sharpening frames after the screen goes quiet. It admits a frame only if fewer frames are on the way than allowed and capture is not paused. It paces capture at the configured frame rate with a reserve of two frames. It captures only the changed region, converts it block by block and marks unchanged blocks, and sends no frame if nothing changed. It encodes at the current bitrate, starting with a keyframe at the beginning and after a recovery. It sends the frame to the viewer with its capture time and sequence number.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M2 1.5 L6 4 L2 6.5"/>
+    </marker>
+  </defs>
+
+  <rect class="box engine" x="16" y="16" width="688" height="392" rx="12"/>
+  <text class="head" x="40" y="40">screen-relay engine, one frame at a time</text>
+  <rect class="box node" x="40" y="56" width="176" height="128" rx="6"/>
+  <g class="icon" transform="translate(56 71)" aria-hidden="true"><path d="M1 8h3l2-5 3 10 2-5h4"/></g>
+  <text class="label" x="80" y="85">Wait</text>
+  <text class="sub" x="56" y="111">for a screen change.</text>
+  <text class="sub" x="56" y="129">When it goes quiet,</text>
+  <text class="sub" x="56" y="147">a few sharpening</text>
+  <text class="sub" x="56" y="165">frames follow.</text>
+  <rect class="box node" x="272" y="56" width="176" height="128" rx="6"/>
+  <g class="icon" transform="translate(288 71)" aria-hidden="true"><path d="M2 3h12l-4.5 5.5V13l-3-1.5V8.5z"/></g>
+  <text class="label" x="312" y="85">Admit</text>
+  <text class="sub" x="288" y="111">takes a frame when</text>
+  <text class="sub" x="288" y="129">fewer frames are on</text>
+  <text class="sub" x="288" y="147">the way than allowed</text>
+  <text class="sub" x="288" y="165">and capture is running</text>
+  <rect class="box node" x="504" y="56" width="176" height="128" rx="6"/>
+  <g class="icon" transform="translate(520 71)" aria-hidden="true"><circle cx="8" cy="8" r="7"/><path d="M8 4v4l2.5 1.5"/></g>
+  <text class="label" x="544" y="85">Pace</text>
+  <text class="sub" x="520" y="111">keeps capture at the</text>
+  <text class="sub" x="520" y="129">configured frame rate,</text>
+  <text class="sub" x="520" y="147">with a reserve of two</text>
+  <text class="sub" x="520" y="165">frames for bursts</text>
+  <rect class="box node" x="40" y="240" width="176" height="144" rx="6"/>
+  <g class="icon" transform="translate(56 254)" aria-hidden="true"><path d="M4 1v11h11M1 4h11v11"/></g>
+  <text class="label" x="80" y="268">Capture</text>
+  <text class="sub" x="56" y="294">reads only the changed</text>
+  <text class="sub" x="56" y="312">region and converts it</text>
+  <text class="sub" x="56" y="330">block by block, marking</text>
+  <text class="sub" x="56" y="348">unchanged blocks.</text>
+  <text class="sub" x="56" y="366">No change, no frame.</text>
+  <rect class="box node" x="272" y="240" width="176" height="144" rx="6"/>
+  <g class="icon" transform="translate(288 254)" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 2v12M11 2v12M2 8h12"/></g>
+  <text class="label" x="312" y="268">Encode</text>
+  <text class="sub" x="288" y="294">at the current bitrate.</text>
+  <text class="sub" x="288" y="312">Skips marked blocks.</text>
+  <text class="sub" x="288" y="330">A keyframe starts a</text>
+  <text class="sub" x="288" y="348">session and follows a</text>
+  <text class="sub" x="288" y="366">recovery.</text>
+  <rect class="box node" x="504" y="240" width="176" height="144" rx="6"/>
+  <g class="icon" transform="translate(520 263)" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4"/></g>
+  <text class="label" x="544" y="277">Send</text>
+  <text class="sub" x="520" y="303">queues the frame to</text>
+  <text class="sub" x="520" y="321">the viewer with its</text>
+  <text class="sub" x="520" y="339">capture time and</text>
+  <text class="sub" x="520" y="357">sequence number</text>
+  <path class="wire" d="M220 120H268"/>
+  <path class="wire" d="M452 120H500"/>
+  <path class="wire" d="M592 188V212H128V236"/>
+  <path class="wire" d="M220 304H268"/>
+  <path class="wire" d="M452 304H500"/>
+  <text class="tag" x="244" y="109" text-anchor="middle">change</text>
+  <text class="tag" x="476" y="109" text-anchor="middle">allowed</text>
+  <text class="tag" x="360" y="201" text-anchor="middle">on pace</text>
+  <text class="tag" x="244" y="293" text-anchor="middle">pixels</text>
+  <text class="tag" x="476" y="293" text-anchor="middle">frame</text>
+</svg>
+</body>
+</html>

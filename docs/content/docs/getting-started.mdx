@@ -1,0 +1,111 @@
+---
+title: Getting started
+description: Start a Linux, macOS, or Windows desktop and control it from a browser or the CLI.
+---
+
+## Prerequisites
+
+- A Linux VM, container, or sandbox with root or `sudo`, a Mac, or a Windows PC. See [macOS](/docs/macos) and [Windows](/docs/windows) for their requirements.
+- Node 22 or newer with npm.
+- Debian, Ubuntu, Fedora, Arch Linux, or Alpine on x64 or arm64 for automatic package installation. On another distribution, install the build tools and libraries yourself, then run `screen-relay install` to build the engine.
+- SSH access to the VM from your laptop.
+- A browser with H.264 WebCodecs, such as current Chrome, Edge, or Safari.
+
+For platform-specific setup on Android or Windows, follow [Termux](/docs/termux) or [Windows](/docs/windows).
+
+<span id="install-screen-relay" />
+
+## 1. Install screen-relay
+
+On the VM, install the CLI from npm:
+
+```sh
+npm install -g screen-relay
+```
+
+This installs the `screen-relay` command, the Node SDK, the viewer, and the agent skills. It installs no system packages.
+
+The first `screen-relay up` sets the machine up before it starts a session:
+
+1. If a desktop is already running in your shell, it asks whether to stream that desktop or start a new virtual one.
+2. It asks which backend to set up: X11 with the XFCE desktop (the default), Wayland with sway, or both.
+3. It lists the system packages it needs, asks you to confirm, and installs them with the system package manager, using `sudo` unless you are root.
+4. It builds the engine.
+
+The questions appear only at a terminal. `--backend`, `SCREEN_RELAY_BACKEND`, `backend` in the config file, or `--display` skips the first two. Outside a terminal, pass `--yes`.
+
+The built engine is stored in `~/.local/share/screen-relay/engine/<version>/`. After you upgrade screen-relay, the next `up` rebuilds the engine without sudo. Builds for earlier versions stay in that directory until you delete them.
+
+On Fedora, setup stops when RPM Fusion Free is not enabled, because x264 comes from it. Run the printed command, then run `screen-relay install` again. For a user with `sudo`, the command is:
+
+```sh
+sudo dnf -y install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
+```
+
+To set up the machine without starting a session, run `screen-relay install`. Backend details are on [Linux](/docs/linux), [macOS](/docs/macos), and [Windows](/docs/windows). For containers, see [Docker](/docs/docker). The [CLI reference](/docs/cli) lists the `install` and `up` options.
+
+<span id="start-a-session" />
+
+## 2. Start a session
+
+On the VM, run:
+
+```sh
+screen-relay up -d
+```
+
+screen-relay starts the desktop and prints a viewer link when it is ready. The session is named `default`. See [Configuration](/docs/configuration) to change the resolution or frame rate, or [Troubleshooting](/docs/troubleshooting) if startup fails.
+
+<span id="open-the-viewer" />
+
+## 3. Open the viewer
+
+The default session listens on `127.0.0.1:8080` on the VM. From your laptop, forward the port over SSH, replacing `user@your-vm` with your login and VM address:
+
+```sh
+ssh -N -L 8080:127.0.0.1:8080 user@your-vm
+```
+
+Leave the tunnel running and open the viewer link printed by `screen-relay up`. You should see the desktop. The default loopback session needs no token. If a link contains `#token=`, keep the whole link secret.
+
+Use HTTPS or `http://127.0.0.1` for the viewer's secure context. See [Remote access](/docs/remote-access) for other ways to connect.
+
+## 4. Control it from the VM
+
+On the VM, start a terminal on the default X11 desktop:
+
+```sh
+screen-relay run -- xfce4-terminal
+```
+
+The command prints the process ID. Wait for the terminal to appear in the viewer. If the viewer has control, choose **Release control** before running the input commands below. The viewer stays open so you can watch the result.
+
+While the viewer has control, the clipboard follows you. Press Ctrl+V, or Cmd+V on a Mac, to paste your computer's clipboard text into the desktop. Text you copy on the desktop while the viewer has focus lands on your computer's clipboard. The **Clipboard** button in the viewer copies or sends the text by hand.
+
+```sh
+screen-relay screenshot screen.png
+screen-relay click 0.5 0.5
+screen-relay type "echo hello"
+screen-relay key Enter
+screen-relay screenshot after.png
+```
+
+The click is at the center of the screen. If the terminal is elsewhere, replace `0.5 0.5` with a point inside it; coordinates are fractions from 0 to 1 measured from the top-left. The viewer shows `hello` as the CLI types it. The screenshots are saved on the VM.
+
+Ask an agent on the VM to run:
+
+```sh
+screen-relay skills get core
+```
+
+This prints the agent workflow for screenshots and input. See [Agent skills](/docs/agent-skills) for more.
+
+## 5. Stop the session
+
+On the VM, run:
+
+```sh
+screen-relay down
+```
+
+screen-relay confirms the session has stopped. This also stops apps started with `screen-relay run`.

@@ -1,0 +1,65 @@
+---
+title: Overview
+description: screen-relay streams a Linux, macOS, or Windows desktop to a browser and lets humans and AI agents control it from a CLI, a Node SDK, or an HTTP API.
+---
+
+screen-relay streams a Linux, macOS, or Windows desktop to your browser. Open the viewer link to see the screen and use it with your mouse and keyboard. An agent can control the same desktop from the `screen-relay` CLI, the Node SDK, or the HTTP and WebSocket API, taking screenshots and sending clicks, keys, and text.
+
+<TabsWithChildren ariaLabel="Platform" tabs={["macOS", "Windows", "Linux"]}>
+  <TabContent className="mt-4" order={1}>
+    <Video src="/demos/macos.mp4" light="/demos/macos.jpg" previewAriaLabel="Play the macOS demo" playing muted loop playsInline />
+  </TabContent>
+  <TabContent className="mt-4" order={2}>
+    <Video src="/demos/windows.mp4" light="/demos/windows.jpg" previewAriaLabel="Play the Windows demo" playing muted loop playsInline />
+  </TabContent>
+  <TabContent className="mt-4" order={3}>
+    <Video src="/demos/linux.mp4" light="/demos/linux.jpg" previewAriaLabel="Play the Linux demo" playing muted loop playsInline />
+  </TabContent>
+</TabsWithChildren>
+
+## Quickstart
+
+```sh
+npm install -g screen-relay
+screen-relay up
+```
+
+[Getting started](/docs/getting-started) explains each step.
+
+## How it works
+
+<Diagram name="architecture" title="How screen-relay connects the desktop, browser, and agent" aspectRatio="720 / 288" />
+
+The engine captures the screen, encodes it as H.264 video, and streams it to the viewer. The viewer, or an agent over HTTP or WebSocket, sends input back. To see how the stream adapts to a slow link, read [How streaming works](/docs/how-streaming-works).
+
+## What works where
+
+| Platform | Backend | Start a desktop | Details |
+| --- | --- | --- | --- |
+| Linux | `x11` (default) or `wayland` | `screen-relay up -d` | [Linux](/docs/linux) |
+| macOS 12.3 or later | `macos` | `screen-relay up -d` | [macOS](/docs/macos) |
+| Windows 10 or later, x64 | `windows` | `screen-relay up -d` | [Windows](/docs/windows) |
+
+## Limits
+
+- Audio, IME, relative pointer, and hardware encoding are not supported. The clipboard carries text only.
+- Three capture failures in a row end the session. `screen-relay logs` shows why.
+
+Control, desktop size, and access rules are covered in [CLI reference](/docs/cli), [Configuration](/docs/configuration), and [Remote access](/docs/remote-access).
+
+## Status
+
+<Callout title="Experimental">
+  CI installs and checks screen-relay on Debian 13, Ubuntu 24.04 and 26.04, Fedora 44,
+  Arch Linux, and Alpine 3.24. screen-relay also ran end to end in a Vercel Sandbox on
+  Ubuntu 26.04 (x86_64) and in Docker on Debian 13 (arm64). It has not been
+  tested over wide-area links or in long runs.
+</Callout>
+
+## Next steps
+
+- [CLI reference](/docs/cli): every command, option, output, and error.
+- [SDK](/docs/sdk): control a session from Node.
+- [HTTP API](/docs/protocol): endpoints, input events, and the wire format.
+- [Agent skills](/docs/agent-skills): give an agent a workflow to follow.
+- [Remote access](/docs/remote-access): tunnels, TLS, and tokens.

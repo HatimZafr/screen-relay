@@ -1,0 +1,86 @@
+---
+title: macOS
+description: Stream and control the display of a Mac you are logged in to.
+---
+
+On a Mac, screen-relay attaches to the display of the logged-in user. It starts no virtual display and no desktop. The `macos` backend is the only backend on a Mac.
+
+<Video src="/demos/macos.mp4" light="/demos/macos.jpg" previewAriaLabel="Play the macOS demo" playing muted loop playsInline />
+
+## Requirements
+
+- macOS 12.3 or later, on Apple silicon or Intel. Node 24 and newer need macOS 13.5, so use Node 22 on macOS 12.3 through 13.4.
+- [Homebrew](https://brew.sh).
+- The Xcode Command Line Tools.
+- A logged-in user session. Start screen-relay from a terminal in that session.
+
+## Install
+
+After [installing the CLI](/docs/getting-started#install-screen-relay), set up the Mac:
+
+```sh
+screen-relay install
+```
+
+Setup runs `brew install pkgconf x264 libwebsockets` and builds the engine. Without Homebrew, setup stops and says so. On a Mac, `--backend` accepts only `macos`.
+
+## Grant permissions
+
+1. In **System Settings > Privacy & Security**, enable these for the app that starts screen-relay, such as your terminal:
+   - **Screen & System Audio Recording**, to capture the display.
+   - **Accessibility**, to send keyboard and mouse events.
+2. Restart that app. screen-relay asks for each missing permission once when it starts.
+
+`screen-relay doctor` reports both in its `permissions` check. For the raw engine message, run:
+
+```sh
+relay-engine --backend macos --check
+```
+
+## Start a session
+
+```sh
+screen-relay up -d
+```
+
+Open the viewer link as described in [Getting started](/docs/getting-started#open-the-viewer). Stop the session with `screen-relay down`. Stopping screen-relay leaves your display as it was.
+
+To start an app in your user session, run:
+
+```sh
+screen-relay run -- APP
+```
+
+The app inherits the environment of the command that runs it, without `DISPLAY`, `WAYLAND_DISPLAY`, and `XAUTHORITY`. It starts in your home directory.
+
+### Choose a display
+
+screen-relay captures the main display by default. To capture another, pass its display ID:
+
+```sh
+screen-relay up -d --output DISPLAY_ID
+```
+
+To list the IDs, pass one that does not exist, such as `--output 0`. The engine reports `Display 0 not found; active displays:` followed by each ID with its size in points, and the error appears in the output of `screen-relay up`.
+
+`--display` is not supported on a Mac. `display.resolution` is ignored, and screen-relay prints a warning if your configuration sets it.
+
+## What you will notice
+
+- The stream uses the display's native pixels, so a Retina display streams at full resolution. A display larger than the 16384-pixel limit is halved until it fits.
+- The pointer is not part of the video. The viewer shows the browser's own pointer.
+- The frame rate follows the display's refresh rate, up to `stream.fps`. The setting accepts up to 120.
+- If the display's size or position changes, the stream stops with `The display changed from WxH to WxH or moved; restart screen-relay to stream it`. Run `screen-relay up` again.
+- Text is typed as Unicode characters.
+
+## Check the machine
+
+```sh
+screen-relay doctor
+```
+
+The checks cover the macOS version, the engine, and the permissions.
+
+## Remote access
+
+Remote access works as it does on Linux. See [Remote access](/docs/remote-access).

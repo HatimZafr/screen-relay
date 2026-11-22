@@ -1,0 +1,110 @@
+---
+title: Troubleshooting
+description: Find and fix common screen-relay problems.
+---
+
+Start with these commands on the VM:
+
+```sh
+screen-relay doctor
+screen-relay logs
+```
+
+Follow the fixes from `doctor`. For a named session, add `--name NAME` to `screen-relay logs`. To follow one component, run `screen-relay logs engine --follow`. Error reasons are listed in the [CLI reference](/docs/cli#error-reasons).
+
+Stopping a session also stops the processes it started. On Windows, apps started with `screen-relay run` keep running. Save your work before running `screen-relay down`.
+
+## Install and setup
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `screen-relay: command not found` | npm's global bin folder is not on `PATH`. Add the output of `npm prefix -g`, plus `/bin`, to `PATH`, then open a new shell. |
+| Setup cannot install packages, or it needs privileges | Automatic installs need a [supported distribution](/docs/getting-started) and root or passwordless `sudo`. Otherwise, install the build tools and libraries yourself, then run `screen-relay install` to build the engine. `npm install -g screen-relay` alone needs no system packages. |
+| Setup on Fedora stops and asks for RPM Fusion | Run the printed command, then run `screen-relay install`. |
+| Setup on Windows stops and asks for MSYS2 | winget is not available, so install MSYS2 from https://www.msys2.org, then run `screen-relay install` again. See [Windows](/docs/windows#install). |
+| Setup on Windows stops because it will not run MSYS2 | Another account owns `C:\msys64`, or can write to it. An MSYS2 that you installed yourself inherits a rule from `C:\` that lets every user add files. Run the `icacls` command that the error prints, then run `screen-relay install` again. If another account owns `C:\msys64`, delete it and run `screen-relay install` again. See [Windows](/docs/windows#install). |
+| `unsupported_platform` | `up`, `down`, and `run` need the Linux, macOS, or Windows machine that runs the desktop. On your laptop, run `npm install -g screen-relay` and use the [client commands](/docs/remote-access). |
+| `missing_input` when `up` needs setup and there is no terminal | Run `screen-relay install --yes`, adding `--backend wayland` for Wayland. Or pass `--yes` to `up`. |
+| `missing_dependency` or a failed doctor check | Run the suggested fix. For missing packages or the engine, run `screen-relay install`. For backend checks, see [X11](/docs/linux), [Wayland](/docs/linux), [macOS](/docs/macos), or [Windows](/docs/windows). |
+| XFCE exits with a `default_icon_at_size` assertion on Ubuntu 26.04 | Missing icon loader. Run `sudo apt-get install glycin-loaders`, or run `screen-relay install` to set up missing packages. |
+
+## Starting a session
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `already_running` | A session with that name exists. Run `screen-relay down --name NAME`, or start another with a different `--name` and `--port`. |
+| `Cannot listen on 127.0.0.1:8080` in the engine log | Port in use. Run `screen-relay up --port 8081` with a free port, or stop the session that uses it. |
+| `component_failed` or `status` shows `failed` | Run `screen-relay logs`, or `screen-relay logs COMPONENT` for the component named in the error. For a background session, also check `supervisor.log` in the [state directory](/docs/cli#state-directory). |
+| `timeout` while the engine or desktop starts | The default readiness timeout is 30 seconds. Check the log tail in the error, then run `screen-relay up --timeout 90` on a slow VM. This does not extend the display startup timeout. |
+| `No display is attached to this session` or `Desktop Duplication is unavailable` on Windows | `up` ran over SSH or from a service session. Run `screen-relay up -d` in a terminal on the signed-in user's desktop. See [Windows](/docs/windows#start-a-session). |
+| `invalid_config` | Fix the file and key named in the error. See [Configuration](/docs/configuration). |
+| `opening X display failed` with `--display` | Check the display number and `XAUTHORITY`. See [X11](/docs/linux#attach-to-an-x11-display). |
+
+## Viewer and streaming
+
+| Symptom | Cause and fix |
+| --- | --- |
+| WebCodecs unavailable or a decoder error | Use a browser with H.264 WebCodecs, and open the viewer over `https://` or `http://127.0.0.1`. Check the viewer status. |
+| The viewer repeatedly fails to connect when other viewers are open | Only four viewers can connect at once. Close a viewer and reconnect. |
+| Ctrl+V or Cmd+V pastes the desktop's old clipboard, or a desktop copy does not reach your computer | The viewer needs control and a secure context: open it over `https://` or `http://127.0.0.1`. Check that `capabilities.clipboard` is `true`; on Wayland, the compositor must provide `wlr-data-control`. Use the **Clipboard** button to copy or send the text by hand. |
+| The viewer cannot connect through a proxy | Forward WebSocket upgrades, preserve `Host` and `Origin`, and use the `--public` URL. See [Remote access](/docs/remote-access). |
+| The picture is too small or blurry | Under **Scaling**, choose **Actual size** or **Sharp pixels**. To resize the desktop, set `display.resolution` and restart. With `--display`, screen-relay uses the existing screen size. See [Configuration](/docs/configuration). |
+| The desktop streams at about 60 fps although `stream.fps` is higher | A compositor repaints at most 60 times a second. See [The desktop holds at 60 fps](#the-desktop-holds-at-60-fps). |
+| The picture is blocky although the desktop fills the viewer | The stream sits at its minimum bitrate. Read `target_bitrate_bps` from the engine's `/metrics` endpoint, which `screen-relay status --url URL --json` reports for a remote engine. Then raise `stream.bitrate.min` if the link can carry more. See [Configuration](/docs/configuration). |
+| `resources_available: false` | screen-relay cannot read valid cgroup v2 counters. Make `/sys/fs/cgroup/cpu.stat`, `/sys/fs/cgroup/memory.current`, and `/sys/fs/cgroup/memory.stat` readable. Streaming is unaffected. |
+
+### The desktop holds at 60 fps
+
+A compositing window manager repaints at the display refresh rate, which is 60 times a second on the display screen-relay creates. The engine then captures at most 60 frames a second, however high `stream.fps` is set.
+
+To fix it:
+
+1. Check that `display.compositor` is not `on`, and that `SCREEN_RELAY_COMPOSITOR` is not `on`. The default, `auto`, turns the compositor off when `stream.fps` is above 60. See [Configuration](/docs/configuration).
+2. Restart the session. screen-relay applies `display.compositor` each time a session starts.
+
+Keep these limits in mind:
+
+- A change made inside the running session, for example with `xfconf-query`, lasts only until the session restarts.
+- A desktop you attach to with `--display`, or another desktop command, keeps its own compositor. Turn it off in that desktop's settings.
+
+To confirm, compare the frame rate in the viewer's **Stream statistics**, which reports the frames actually drawn. With compositing off, a 1280x720 session set to 120 fps draws at the configured rate while the encoder uses a fraction of one core.
+
+## Input
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `busy` from input (HTTP 409) | A viewer that owns input, a control session, or another controller has input, or the input queue is full. A viewer that watches view-only does not block input. Choose **Release control** in the viewer or close the other owner, then retry. `data.applied`, when present, counts events already applied. Screenshots still work. |
+| `busy` from `screenshot` (HTTP 503) | Another screenshot is running. Retry after it finishes. |
+| Text has the wrong case | Local and desktop Caps Lock states differ. Reload the viewer and press Caps Lock to match the state you want. Local Caps Lock does not affect `screen-relay type`. |
+| Characters are wrong, or `unsupported_input` | Set `keyboard.layout` and restart. With `--display`, change the existing desktop's layout instead. Use `screen-relay type` for text and `screen-relay key` for shortcuts. See [Configuration](/docs/configuration). |
+| Mac Command shortcuts behave differently | Open **Send keys** and turn off **Use ⌘ as Ctrl** to send Command as Super instead of Ctrl. |
+
+## Remote access
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `unauthorized` (HTTP 401) | Token missing or wrong. Run `screen-relay status --show-token` on the VM, and update the file used by `--token-file` or `SCREEN_RELAY_TOKEN_FILE`. For the viewer, open the link printed by `screen-relay up`. Each `screen-relay up` that needs a token creates a new one. |
+| `forbidden` (HTTP 403) | `Host` or `Origin` not allowed. Connect through `127.0.0.1`, `localhost`, or the `--public` URL. With `--public`, a browser on loopback can connect to the same loopback host and port without an allowlist entry. Configure the proxy to preserve both headers. For a browser page on another origin, see [Browser origins](/docs/remote-access#browser-origins). |
+| The stream works but metrics or capabilities fail in an embedded viewer | The engine sends no CORS headers, so a page on another origin cannot read HTTP responses even when `--allow-origin` lists it. Serve the viewer at the same origin as the relay URL it uses. A loopback page on a different port is still cross-origin. See [Embedded viewers and CORS](/docs/remote-access#embedded-viewers-and-cors). |
+| `invalid_input` about a URL or plain HTTP | Use an HTTPS origin with no path, query, or credentials, and pass a token for remote hosts. Plain HTTP works only for `localhost` and `127.0.0.1`. Use an [SSH tunnel](/docs/remote-access) if needed. |
+| `unreachable` | Check the URL, and run `screen-relay status` on the VM. If the certificate was rejected, use one the client trusts. |
+
+## macOS
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `Screen capture permission is missing` or `Accessibility permission is missing` | Enable **Screen & System Audio Recording** and **Accessibility** under **System Settings > Privacy & Security** for the app that starts screen-relay, such as your terminal. Restart that app, then run `screen-relay doctor`. See [macOS](/docs/macos#grant-permissions). |
+| `Display N not found; active displays:` | Pass an ID from the list in the error with `--output`. See [macOS](/docs/macos#choose-a-display). |
+| `The display changed ... restart screen-relay to stream it` | The display's size or position changed. Run `screen-relay up` again. |
+
+## Wayland
+
+### Engine exits with a missing Wayland protocol
+
+The compositor lacks a required protocol, so the engine fails with `component_failed`. Attach to a supported compositor listed in [Wayland](/docs/linux).
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `Unsupported root size` when attaching | Create a supported headless output, and pass its name with `--output`. See [Wayland](/docs/linux#attach-to-a-wayland-compositor). |
+| `missing_input`: `XDG_RUNTIME_DIR is required` with `--display` | Set the compositor's runtime directory. See [Wayland](/docs/linux#attach-to-a-wayland-compositor). |
+| `component_failed` for `display` or `timeout` while sway starts | Sway exited, or did not report its Wayland and XWayland displays within 15 seconds. Run `SCREEN_RELAY_BACKEND=wayland screen-relay doctor`, then `screen-relay logs display`. |

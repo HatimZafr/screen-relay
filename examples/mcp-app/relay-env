@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""Runs a command with the display, authority, and D-Bus address of a screen-relay desktop session."""
+import json
+import os
+import re
+import sys
+
+SESSION_NAME = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}")
+
+
+def session_state():
+    """Returns the session state file and the session name it belongs to, or None if SCREEN_RELAY_STATE points at it."""
+    override = os.environ.get("SCREEN_RELAY_STATE")
+    if override:
+        return override, None
+    name = os.environ.get("SCREEN_RELAY_SESSION_NAME") or "default"
+    if not SESSION_NAME.fullmatch(name):
+        sys.stderr.write(f'relay-env: invalid session name "{name}"\n')
+        sys.stderr.write('relay-env: use 1 to 64 characters from letters, digits, ".", "_" or "-"\n')
+        sys.exit(2)
+    root = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
+    return os.path.join(root, "screen-relay", name, "session.json"), name
+
+
+path, name = session_state()
+try:
+    with open(path, encoding="utf-8") as handle:
+        session = json.load(handle)
+except (OSError, ValueError) as error:
+    detail = f' for session "{name}"' if name else ""
+    reason = getattr(error, "strerror", None) or error
+    sys.stderr.write(f"relay-env: cannot read {path}{detail}: {reason}\n")
+    sys.exit(2)
+
+env = dict(os.environ)
+env["DISPLAY"] = session["display"]
+if session.get("xauthority"):
+    env["XAUTHORITY"] = session["xauthority"]
+env.update(session.get("environment") or {})
+
+if len(sys.argv) < 2:
+    sys.stderr.write("usage: relay-env COMMAND [ARG...]\n")
+    sys.exit(2)
+try:
+    os.execvpe(sys.argv[1], sys.argv[1:], env)
+except OSError as error:
+    sys.stderr.write(f"relay-env: {error}\n")
+    sys.exit(127)

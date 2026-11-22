@@ -1,0 +1,117 @@
+---
+title: Configuration
+description: Set screen-relay's display, stream, server, keyboard, backend, and desktop options with a YAML file, flags, or environment variables.
+---
+
+Set how `screen-relay up` starts a session with an optional YAML file on the VM. Every key is optional.
+
+Precedence, highest first:
+
+1. Flag
+2. Environment variable
+3. Config file
+4. Default
+
+## Where the file lives
+
+`screen-relay up` uses the first source that matches:
+
+| Order | Source |
+| --- | --- |
+| 1 | `--config FILE` |
+| 2 | `SCREEN_RELAY_CONFIG` |
+| 3 | `${XDG_CONFIG_HOME:-~/.config}/screen-relay/config.yaml`, when it exists |
+
+If `--config` or `SCREEN_RELAY_CONFIG` names a file that does not exist, `screen-relay up` fails.
+
+`up`, `install`, and `doctor` read the file. The viewer and the client commands do not.
+
+## Default configuration
+
+Copy this file to `~/.config/screen-relay/config.yaml` and change the values you need. The values are the defaults for a new X11 display. `desktop` and `backend` are commented out because their defaults depend on the backend; remove the `#` to set one.
+
+```yaml title="~/.config/screen-relay/config.yaml"
+# screen-relay settings. Every key is optional; the values below are the defaults.
+
+display:
+  # WIDTHxHEIGHT. Width even 320..16384, height even 240..16384.
+  resolution: 1280x720
+
+stream:
+  # 10..120.
+  fps: 60
+  # Bits per second, 250000..100000000. A k or M suffix is 1000-based.
+  # Require min <= start <= max.
+  bitrate:
+    min: 1M
+    start: 8M
+    max: 40M
+
+server:
+  # 1..65535.
+  port: 8080
+  # bind: 127.0.0.1
+  # public: https://desktop.example.com
+  # allow_origin: https://app.example.com,http://localhost:8081
+  # tls_cert: /path/fullchain.pem
+  # tls_key: /path/key.pem
+
+keyboard:
+  # Layout name such as us, de or fr, or a comma-separated list. Linux only.
+  layout: us
+
+# Linux only. xfce, none, or a command. Default: xfce (x11) or foot (wayland), or none with --display.
+# desktop: xfce
+
+# x11, wayland, macos, or windows. Default: x11 when the engine has it, else wayland; macos on macOS; windows on Windows.
+# backend: x11
+```
+
+To create the file from the terminal:
+
+```bash title="Terminal"
+mkdir -p ~/.config/screen-relay
+nano ~/.config/screen-relay/config.yaml
+```
+
+## Keys
+
+| Key | Default | Allowed values | Flag | Environment variable |
+| --- | --- | --- | --- | --- |
+| `display.resolution` | `1280x720` | The desktop size as `WIDTHxHEIGHT`, both even. Width 320 to 16384, height 240 to 16384. Ignored with `--display` and on macOS and Windows, which use the existing screen's size. | None | `SCREEN_RELAY_RESOLUTION` |
+| `display.compositor` | `auto` | `auto`, `on`, or `off`. Whether the XFCE desktop that screen-relay starts runs its compositor, which draws window shadows and transparency and repaints at most 60 times a second. `auto` turns it off when `stream.fps` is above 60. Ignored with `--display` and for any other desktop. | None | `SCREEN_RELAY_COMPOSITOR` |
+| `stream.fps` | `60` | Whole number from 10 to 120 | None | `SCREEN_RELAY_FPS` |
+| `stream.bitrate.min` | `1M` | 250000 to 100000000, as a whole number or with a `k` (thousand) or `M` (million) suffix. No higher than `start`. | None | `SCREEN_RELAY_BITRATE_MIN` |
+| `stream.bitrate.start` | `8M` | Same values as `min`. The stream adjusts between `min` and `max` from here. | None | `SCREEN_RELAY_BITRATE_START` |
+| `stream.bitrate.max` | `40M` | Same values as `min`. No lower than `start`. | None | `SCREEN_RELAY_BITRATE_MAX` |
+| `server.port` | `8080` | 1 to 65535 | `--port` | `SCREEN_RELAY_PORT` |
+| `server.bind` | `127.0.0.1` | Listen address on the VM. Setting `server.public` does not change it. Any address other than `127.0.0.1` generates a token. | `--bind` | `SCREEN_RELAY_BIND` |
+| `server.public` | unset | HTTPS origin with no path, query, or credentials, such as `https://desktop.example.com`. The engine accepts requests only for this host. A browser page must be served from this origin, a loopback page connecting to the same address, or an origin in `server.allow_origin`. | `--public` | `SCREEN_RELAY_PUBLIC` |
+| `server.allow_origin` | unset | Up to 16 comma-separated origins, as in [`--allow-origin`](/docs/remote-access#browser-origins): lowercase HTTPS origins for any host, or loopback HTTP origins such as `http://localhost:8081`. Requires a token. | `--allow-origin` | `SCREEN_RELAY_ALLOW_ORIGIN` |
+| `server.tls_cert` | unset | Path to a certificate file. Set with `tls_key`. | `--tls-cert` | `SCREEN_RELAY_TLS_CERT` |
+| `server.tls_key` | unset | Path to the private key file. Set with `tls_cert`. | `--tls-key` | `SCREEN_RELAY_TLS_KEY` |
+| `keyboard.layout` | `us` | A layout name such as `de` or `fr`, or a comma-separated list such as `us,de`, using letters, digits, `_`, and `-`. On X11 it needs `setxkbmap`, which `screen-relay doctor` checks. | None | `SCREEN_RELAY_KEYBOARD_LAYOUT` |
+| `backend` | `x11` when the engine includes it, else `wayland`; `macos` on macOS; `windows` on Windows | `x11`, `wayland`, `macos`, or `windows`. See [X11](/docs/linux), [Wayland](/docs/linux), [macOS](/docs/macos), and [Windows](/docs/windows). | `--backend` | `SCREEN_RELAY_BACKEND` |
+| `desktop` | `xfce` on X11, `foot` on Wayland, or `none` with `--display`. Ignored on macOS and Windows, which start no desktop. | `xfce`, `none`, or a command. See [X11](/docs/linux) and [Wayland](/docs/linux). | `--desktop` | `SCREEN_RELAY_DESKTOP` |
+
+Rules that span keys:
+
+- `stream.bitrate` needs `min <= start <= max`, including when you change one value.
+- `server.tls_cert` and `server.tls_key` must be set together.
+
+For remote access, leave the engine on loopback when using an SSH tunnel or a proxy on the same VM. If a remote proxy needs to reach the engine, set `server.bind` to an address only that proxy can reach. In a container, publish the port to the host loopback. See [Remote access](/docs/remote-access) and [Docker](/docs/docker).
+
+## Bad values
+
+`screen-relay up` refuses to start when a value is wrong. It names the file and key, and it does not fall back to a default.
+
+- Unknown keys, wrong types, and values outside the allowed range are errors.
+- A bad value from a flag or environment variable fails the same way.
+
+## Apply changes
+
+Settings apply when `screen-relay up` starts. There is no live reload and no live resize. To change a setting:
+
+1. Stop the session with `screen-relay down`.
+2. Edit the file.
+3. Run `screen-relay up` again.

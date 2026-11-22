@@ -1,0 +1,9 @@
+allowBuilds:
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - '@vercel/geistdocs@2.14.1'
+
+overrides:
+  zod: 4.6.7
+  next: 16.4.3

@@ -1,0 +1,118 @@
+---
+title: Linux
+description: Install, start, and attach to X11 or Wayland desktops on Linux.
+---
+
+Linux has two backends: `x11`, the default, and `wayland`. Choose one with `--backend`. X11 with XFCE is set up on every distribution that screen-relay installs packages on.
+
+<Video src="/demos/linux.mp4" light="/demos/linux.jpg" previewAriaLabel="Play the Linux demo" playing muted loop playsInline />
+
+| | X11 | Wayland |
+| --- | --- | --- |
+| Default | Yes. `up` uses X11 when the engine includes it, otherwise Wayland. | No. Use `--backend wayland`. |
+| Virtual display | A virtual X display | A headless sway desktop |
+| Default desktop | XFCE | The foot terminal, on headless sway with XWayland |
+| Attaches to | An existing X display, with `--display` | A running wlroots-based compositor, with `--display "$WAYLAND_DISPLAY"` |
+| `--output` | No. `--output` is available only with Wayland. | Yes, to choose an output by name |
+
+## Install
+
+Install the CLI from npm, then set up the backend you need:
+
+```sh
+npm install -g screen-relay
+screen-relay install
+screen-relay install --backend x11
+screen-relay install --backend wayland
+screen-relay install --backend all
+```
+
+- `screen-relay install` with no `--backend` sets up X11. `--backend x11` does the same.
+- X11 installs the X11 packages and XFCE, then builds the engine.
+- Wayland installs sway, XWayland, and foot, then builds the engine.
+- `--backend all` sets up both backends.
+
+Adding a backend keeps the ones the engine already has.
+
+## Start a desktop
+
+```sh
+screen-relay up -d --backend x11
+screen-relay up -d --backend wayland
+```
+
+- `--desktop none` skips the default desktop. `--desktop COMMAND` starts that command instead.
+- The display or output uses `display.resolution` from your [configuration](/docs/configuration), or `1280x720` by default.
+- The Wayland desktop needs no GPU.
+
+To open the viewer, follow [Getting started](/docs/getting-started#open-the-viewer).
+
+## Attach to an existing display
+
+### Attach to an X11 display
+
+```sh
+screen-relay up -d --backend x11 --display :0
+```
+
+Replace `:0` with your display number. screen-relay inherits `XAUTHORITY` from your environment, uses the existing display size, and starts no desktop by default. Stopping screen-relay leaves the display running.
+
+If the engine reports `opening X display failed`, check the display number and set `XAUTHORITY` to the X session's authority file. Do not run `xhost +`.
+
+### Attach to a Wayland compositor
+
+From a terminal in your compositor session, run:
+
+```sh
+screen-relay up -d --backend wayland --display "$WAYLAND_DISPLAY"
+```
+
+screen-relay captures the first output at its existing size and starts no desktop by default. To choose an output, add `--output OUTPUT`, replacing `OUTPUT` with its name. On sway, list outputs with `swaymsg -t get_outputs`; on Hyprland, use `hyprctl monitors`.
+
+screen-relay needs the compositor's `XDG_RUNTIME_DIR`. If it is unset and the compositor uses `/run/user/$(id -u)`, run `export XDG_RUNTIME_DIR=/run/user/$(id -u)` before starting screen-relay. Stopping screen-relay leaves the compositor running.
+
+If the output is outside the [size limits](#limits), create a headless output with `swaymsg create_output` or `hyprctl output create headless screen-relay`, configure it to a supported size, and select it with `--output`. Move a window or workspace onto that output to see it in the viewer.
+
+## Check the machine
+
+Both backends check the engine, the required libraries, and the default port.
+
+### X11
+
+```sh
+screen-relay doctor
+```
+
+If your configuration or `SCREEN_RELAY_BACKEND` selects Wayland, run `SCREEN_RELAY_BACKEND=x11 screen-relay doctor` instead. The checks also cover:
+
+- `Xvfb`, `xauth`, `xprop`, `xwininfo`, `xdpyinfo`, `setxkbmap`, and required X extensions.
+- XFCE, D-Bus, and icon decoding.
+
+### Wayland
+
+```sh
+SCREEN_RELAY_BACKEND=wayland screen-relay doctor
+```
+
+The checks also cover `sway`, `swaymsg`, `Xwayland`, and `foot`. Doctor does not check the protocols of an existing compositor. If sway fails to start, run `screen-relay logs display`.
+
+## Limits
+
+- The display or output must be 320 to 16384 pixels wide and 240 to 16384 pixels high, with even dimensions.
+- On X11, to resize a virtual display, change `display.resolution` and restart screen-relay. For an attached display, resize it separately before restarting screen-relay.
+
+### Compositors
+
+Wayland works with these compositors:
+
+| Compositor | Status |
+| --- | --- |
+| sway, labwc | Tested |
+| Hyprland (including Omarchy), river, wayfire, niri | Untested |
+| GNOME, KDE | Not supported |
+
+- The compositor must provide `wlr-screencopy` version 3, `wl_shm` with XRGB8888 or ARGB8888 frames, the virtual keyboard protocol, and virtual pointer version 2.
+- Selecting an output by name requires `wl_output` version 4.
+- The output's size is fixed for the session. Restart screen-relay after changing it.
+- The cursor image is not streamed. The viewer shows its own arrow.
+- The clipboard needs the `wlr-data-control` protocol, which sway and labwc provide. Without it, the session works and `capabilities.clipboard` is `false`.
